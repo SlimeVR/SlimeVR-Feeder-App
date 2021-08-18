@@ -1,0 +1,14 @@
+{
+  "name": "Default Bindings for Head",
+  "bindings": {
+    "/actions/main": {
+      "poses": [
+        {
+          "output": "/actions/main/in/head",
+          "path": "/user/head/pose/raw",
+          "requirement": "optional"
+        }
+      ]
+    }
+  }
+}

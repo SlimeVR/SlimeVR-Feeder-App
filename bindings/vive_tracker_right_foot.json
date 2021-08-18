@@ -1,0 +1,15 @@
+{
+  "name": "Default bindings for Vive Tracker (Right Foot)",
+  "controller_type": "vive_tracker_right_foot",
+  "bindings": {
+    "/actions/main": {
+      "poses": [
+        {
+          "output": "/actions/main/in/right_foot",
+          "path": "/user/foot/right/pose/raw",
+          "requirement": "optional"
+        }
+      ]
+    }
+  }
+}

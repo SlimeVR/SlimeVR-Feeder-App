@@ -1,0 +1,15 @@
+{
+  "name": "Default bindings for Vive Tracker (Right Shoulder)",
+  "controller_type": "vive_tracker_right_shoulder",
+  "bindings": {
+    "/actions/main": {
+      "poses": [
+        {
+          "output": "/actions/main/in/right_shoulder",
+          "path": "/user/shoulder/right/pose/raw",
+          "requirement": "optional"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "Default bindings for Vive Tracker (Left Knee)",
+  "controller_type": "vive_tracker_left_knee",
+  "bindings": {
+    "/actions/main": {
+      "poses": [
+        {
+          "output": "/actions/main/in/left_knee",
+          "path": "/user/knee/left/pose/raw",
+          "requirement": "optional"
+        }
+      ]
+    }
+  }
+}
