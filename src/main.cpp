@@ -1,6 +1,8 @@
 #include <openvr.h>
 #include <cstdio>
 #include <string>
+#include <thread>
+#include <chrono>
 #include "pathtools_excerpt.h"
 
 using namespace vr;
@@ -113,6 +115,7 @@ int main(int argc, char* argv[]) {
 
 	char controller_type[k_unMaxPropertyStringSize];
 	do {
+		std::this_thread::sleep_for(std::chrono::seconds(1));
 		EVRInputError error = VRInput()->UpdateActionState(&actionSet, sizeof(actionSet), 1);
 		if (error != EVRInputError::VRInputError_None) {
 			printf("Error: IVRInput::UpdateActionState: %d\n", error);
@@ -128,7 +131,7 @@ int main(int argc, char* argv[]) {
 				continue;
 			}
 			if (!pose.bActive) {
-				printf("inactive\n");
+				//printf("inactive\n");
 				continue;
 			}
 
@@ -147,7 +150,7 @@ int main(int argc, char* argv[]) {
 			}
 			printf("%s\n", controller_type);
 		}
-	} while (false);
+	} while (true);
 
 	shutdown:
 	VR_Shutdown();

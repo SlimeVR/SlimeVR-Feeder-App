@@ -2,35 +2,7 @@
   "default_bindings": [
     {
       "controller_type": "generic",
-      "binding_url": "hands.json"
-    },
-    {
-      "controller_type": "knuckles",
-      "binding_url": "hands.json"
-    },
-    {
-      "controller_type": "oculus_touch",
-      "binding_url": "hands.json"
-    },
-    {
-      "controller_type": "hpmotioncontroller",
-      "binding_url": "hands.json"
-    },
-    {
-      "controller_type": "holographic_controller",
-      "binding_url": "hands.json"
-    },
-    {
-      "controller_type": "vive_controller",
-      "binding_url": "hands.json"
-    },
-    {
-      "controller_type": "vive_cosmos_controller",
-      "binding_url": "hands.json"
-    },
-    {
-      "controller_type": "vive_tracker_handed",
-      "binding_url": "hands.json"
+      "binding_url": "generic.json"
     },
     {
       "controller_type": "vive_tracker_chest",
@@ -74,15 +46,7 @@
     },
     {
       "controller_type": "generic_hmd",
-      "binding_url": "head.json"
-    },
-    {
-      "controller_type": "vive",
-      "binding_url": "head.json"
-    },
-    {
-      "controller_type": "vive_pro",
-      "binding_url": "head.json"
+      "binding_url": "generic_hmd.json"
     }
   ],
   "actions": [

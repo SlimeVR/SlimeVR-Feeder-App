@@ -1,5 +1,6 @@
 {
-  "name": "Default Bindings for Hands",
+  "name": "Default Bindings for Generic Hands",
+  "controller_type": "generic",
   "bindings": {
     "/actions/main": {
       "poses": [

@@ -1,5 +1,6 @@
 {
-  "name": "Default Bindings for Head",
+  "name": "Default Bindings for Generic Head",
+  "controller_type": "generic_hmd",
   "bindings": {
     "/actions/main": {
       "poses": [
