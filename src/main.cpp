@@ -1,8 +1,11 @@
 #include <openvr.h>
 #include <cstdio>
+#include <csignal>
 #include <string>
 #include <thread>
 #include <chrono>
+#include <vector>
+#include <optional>
 #include "pathtools_excerpt.h"
 
 using namespace vr;
@@ -59,11 +62,76 @@ VRActionHandle_t get_action(const char* action_path) {
 	return handle;
 }
 
+std::optional<std::vector<char>> get_string_prop(IVRSystem *system, TrackedDeviceIndex_t index, ETrackedDeviceProperty prop) {
+	ETrackedPropertyError error;
+	uint32_t size = system->GetStringTrackedDeviceProperty(index, prop, nullptr, 0, &error);
+
+	if (size == 0 || (error != TrackedProp_Success && error != TrackedProp_BufferTooSmall)) {
+		if (error != TrackedProp_Success) {
+			printf("Error: size getting IVRSystem::GetStringTrackedDeviceProperty(%d): %d\n", prop, error);
+		}
+		
+		return std::nullopt;
+	}
+
+	std::vector<char> vec = std::vector<char>(size);
+	system->GetStringTrackedDeviceProperty(index, prop, vec.data(), size, &error);
+
+	if (error != TrackedProp_Success) {
+		printf("Error: data getting IVRSystem::GetStringTrackedDeviceProperty(%d): %d\n", prop, error);
+		return std::nullopt;
+	}
+
+	return std::make_optional(vec);
+}
+
+HmdQuaternion_t GetRotation(HmdMatrix34_t matrix) {
+	vr::HmdQuaternion_t q;
+
+	q.w = sqrt(fmax(0, 1 + matrix.m[0][0] + matrix.m[1][1] + matrix.m[2][2])) / 2;
+	q.x = sqrt(fmax(0, 1 + matrix.m[0][0] - matrix.m[1][1] - matrix.m[2][2])) / 2;
+	q.y = sqrt(fmax(0, 1 - matrix.m[0][0] + matrix.m[1][1] - matrix.m[2][2])) / 2;
+	q.z = sqrt(fmax(0, 1 - matrix.m[0][0] - matrix.m[1][1] + matrix.m[2][2])) / 2;
+	q.x = copysign(q.x, matrix.m[2][1] - matrix.m[1][2]);
+	q.y = copysign(q.y, matrix.m[0][2] - matrix.m[2][0]);
+	q.z = copysign(q.z, matrix.m[1][0] - matrix.m[0][1]);
+	return q;
+}
+//-----------------------------------------------------------------------------
+// Purpose: Extracts position (x,y,z).
+// from: https://github.com/Omnifinity/OpenVR-Tracking-Example/blob/master/HTC%20Lighthouse%20Tracking%20Example/LighthouseTracking.cpp
+//-----------------------------------------------------------------------------
+
+HmdVector3_t GetPosition(HmdMatrix34_t matrix) {
+	vr::HmdVector3_t vector;
+
+	vector.v[0] = matrix.m[0][3];
+	vector.v[1] = matrix.m[1][3];
+	vector.v[2] = matrix.m[2][3];
+
+	return vector;
+}
+
+volatile static sig_atomic_t got_sigint = 0;
+
+void handle_signal(int num) {
+	// reinstall, in case it goes back to default.
+	//signal(num, handle_signal);
+	switch (num) {
+	case SIGINT:
+		got_sigint = 1;
+		break;
+	}
+}
+
 int main(int argc, char* argv[]) {
 	int ret = 0;
 	EVRInitError error = VRInitError_None;
-	// maybe prefer Background?
+	EVRInputError input_error = VRInputError_None;
 
+	signal(SIGINT, handle_signal);
+
+	// maybe prefer Background?
 	IVRSystem *system = VR_Init(&error, VRApplication_Overlay);
 	if (error != VRInitError_None) {
 		system = nullptr;
@@ -82,7 +150,6 @@ int main(int argc, char* argv[]) {
 	{
 		std::string actionsFileName = Path_MakeAbsolute(actions_path, Path_StripFilename(Path_GetExecutablePath()));
 
-		EVRInputError input_error;
 		if ((input_error = VRInput()->SetActionManifestPath(actionsFileName.c_str())) != EVRInputError::VRInputError_None) {
 			printf("Error: IVRInput::SetActionManifectPath: %d", input_error);
 			ret = EXIT_FAILURE;
@@ -90,9 +157,12 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
-	VRActionHandle_t handles[BodyPosition::BodyPosition_Count];
+	// note: still windows only, i just wanted to be able to fprintf
+	//FILE* trackers_pipe = fopen("\\\\.\\pipe\\TrackersPipe", "w");
+
+	VRActionHandle_t action_handles[BodyPosition::BodyPosition_Count];
 	for (unsigned int iii = 0; iii < BodyPosition::BodyPosition_Count; ++iii) {
-		handles[iii] = get_action(actions[iii]);
+		action_handles[iii] = get_action(actions[iii]);
 	}
 
 	VRActionSetHandle_t action_set_handle;
@@ -113,28 +183,39 @@ int main(int argc, char* argv[]) {
 		0
 	};
 
-	char controller_type[k_unMaxPropertyStringSize];
+	VRInputValueHandle_t value_handles[BodyPosition::BodyPosition_Count] = { k_ulInvalidInputValueHandle };
+
 	do {
+		TrackedDevicePose_t device_poses[k_unMaxTrackedDeviceCount];
+
 		std::this_thread::sleep_for(std::chrono::seconds(1));
 		EVRInputError error = VRInput()->UpdateActionState(&actionSet, sizeof(actionSet), 1);
+		VRSystem()->GetDeviceToAbsoluteTrackingPose(TrackingUniverseRawAndUncalibrated, 0, device_poses, k_unMaxTrackedDeviceCount);
 		if (error != EVRInputError::VRInputError_None) {
 			printf("Error: IVRInput::UpdateActionState: %d\n", error);
 		}
 		// 0 is the hmd
 		for (unsigned int jjj = 0; jjj < BodyPosition::BodyPosition_Count; ++jjj) {
-			printf("%s\n", actions[jjj]);
+			//printf("%s\n", actions[jjj]);
 			InputPoseActionData_t pose;
 			// Consider Standing universe
-			error = VRInput()->GetPoseActionDataRelativeToNow(handles[jjj], ETrackingUniverseOrigin::TrackingUniverseRawAndUncalibrated, 0, &pose, sizeof(pose), k_ulInvalidInputValueHandle);
+			error = VRInput()->GetPoseActionDataRelativeToNow(action_handles[jjj], ETrackingUniverseOrigin::TrackingUniverseRawAndUncalibrated, 0, &pose, sizeof(pose), k_ulInvalidInputValueHandle);
 			if (error != EVRInputError::VRInputError_None) {
 				printf("Error: IVRInput::GetPoseActionDataRelativeToNow: %d\n", error);
 				continue;
 			}
 			if (!pose.bActive) {
-				//printf("inactive\n");
+				pose.activeOrigin = value_handles[jjj];
+			}
+			else {
+				value_handles[jjj] = pose.activeOrigin;
+			}
+
+			if (pose.activeOrigin == k_ulInvalidInputValueHandle) {
 				continue;
 			}
 
+			// TODO: Filter out SlimeVR Generated trackers, if present.
 			InputOriginInfo_t info;
 			error = VRInput()->GetOriginTrackedDeviceInfo(pose.activeOrigin, &info, sizeof(info));
 			if (error != EVRInputError::VRInputError_None) {
@@ -142,16 +223,37 @@ int main(int argc, char* argv[]) {
 				continue;
 			}
 
-			ETrackedPropertyError prop_error;
-			system->GetStringTrackedDeviceProperty(info.trackedDeviceIndex, Prop_ControllerType_String, controller_type, k_unMaxPropertyStringSize, &prop_error);
-			if (error != TrackedProp_Success) {
-				printf("Error: IVRSystem::GetStringTrackedDeviceProperty(%d, Prop_ControllerType_String): %d\n", jjj, prop_error);
+			if (!pose.bActive) {
+				if (device_poses[info.trackedDeviceIndex].bPoseIsValid) {
+					pose.pose = device_poses[info.trackedDeviceIndex];
+				}
+				else {
+					printf("no valid pose found for '%s'\n", actions[jjj]);
+					continue;
+				}
+			}
+
+			// i suppose we have the option of allocating a static buffer for this, and avoiding allocation
+			/*std::optional<std::vector<char>> controller_type = get_string_prop(system, info.trackedDeviceIndex, ETrackedDeviceProperty::Prop_ControllerType_String);
+			if (!controller_type.has_value()) {
 				continue;
 			}
-			printf("%s\n", controller_type);
-		}
-	} while (true);
 
+			printf("%s\n", controller_type.value().data());*/
+
+			if (jjj != BodyPosition::Head) {
+				// printf("skipping index %d\n", jjj);
+				continue;
+			}
+
+			HmdQuaternion_t rot = GetRotation(pose.pose.mDeviceToAbsoluteTracking);
+			HmdVector3_t pos = GetPosition(pose.pose.mDeviceToAbsoluteTracking);
+
+			// TODO: binary protocol?
+			printf("%f %f %f %f %f %f %f\n", pos.v[0], pos.v[1], pos.v[2], rot.w, rot.x, rot.y, rot.z);
+		}
+	} while (!got_sigint);
+	printf("cleaning up\n");
 	shutdown:
 	VR_Shutdown();
 	ret:
