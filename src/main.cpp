@@ -7,11 +7,14 @@
 #include <vector>
 #include <optional>
 #include "pathtools_excerpt.h"
+#include <cerrno>
 
 using namespace vr;
 
 // TODO: TEMP
 static const char* actions_path = "../../../bindings/actions.json";
+
+static const char* pipe_name = "\\\\.\\pipe\\SlimeVRInput";
 
 enum BodyPosition {
 	Head = 0,
@@ -125,11 +128,21 @@ void handle_signal(int num) {
 }
 
 int main(int argc, char* argv[]) {
-	int ret = 0;
+	int ret = EXIT_SUCCESS;
 	EVRInitError error = VRInitError_None;
 	EVRInputError input_error = VRInputError_None;
 
 	signal(SIGINT, handle_signal);
+
+	// note: still windows only, i just wanted to be able to fprintf
+	FILE* trackers_pipe = fopen(pipe_name, "w");
+	if (!trackers_pipe) {
+		printf("%s\n", strerror(errno));
+		ret = EXIT_FAILURE;
+		goto ret;
+	}
+
+	setvbuf(trackers_pipe, nullptr, _IONBF, 0);
 
 	// maybe prefer Background?
 	IVRSystem *system = VR_Init(&error, VRApplication_Overlay);
@@ -137,7 +150,7 @@ int main(int argc, char* argv[]) {
 		system = nullptr;
 		printf("Unable to init VR runtime: %s\n", VR_GetVRInitErrorAsEnglishDescription(error));
 		ret = EXIT_FAILURE;
-		goto ret;
+		goto close_pipe;
 	}
 
 	// Ensure VR Compositor is available, otherwise getting poses causes a crash (openvr v1.3.22)
@@ -156,9 +169,6 @@ int main(int argc, char* argv[]) {
 			goto shutdown;
 		}
 	}
-
-	// note: still windows only, i just wanted to be able to fprintf
-	//FILE* trackers_pipe = fopen("\\\\.\\pipe\\TrackersPipe", "w");
 
 	VRActionHandle_t action_handles[BodyPosition::BodyPosition_Count];
 	for (unsigned int iii = 0; iii < BodyPosition::BodyPosition_Count; ++iii) {
@@ -186,9 +196,22 @@ int main(int argc, char* argv[]) {
 	VRInputValueHandle_t value_handles[BodyPosition::BodyPosition_Count] = { k_ulInvalidInputValueHandle };
 
 	do {
+		// wait for event
+		while (true) {
+			VREvent_t event;
+			if (!system->PollNextEvent(&event, sizeof(event))) {
+				std::this_thread::yield();
+				continue;
+			}
+
+			if (event.eventType == 13337) {
+				break; // got our vendor event.
+			}
+		}
+
 		TrackedDevicePose_t device_poses[k_unMaxTrackedDeviceCount];
 
-		std::this_thread::sleep_for(std::chrono::seconds(1));
+		
 		EVRInputError error = VRInput()->UpdateActionState(&actionSet, sizeof(actionSet), 1);
 		VRSystem()->GetDeviceToAbsoluteTrackingPose(TrackingUniverseRawAndUncalibrated, 0, device_poses, k_unMaxTrackedDeviceCount);
 		if (error != EVRInputError::VRInputError_None) {
@@ -204,10 +227,12 @@ int main(int argc, char* argv[]) {
 				printf("Error: IVRInput::GetPoseActionDataRelativeToNow: %d\n", error);
 				continue;
 			}
+			bool send_add = false;
 			if (!pose.bActive) {
 				pose.activeOrigin = value_handles[jjj];
 			}
-			else {
+			else if (value_handles[jjj] != pose.activeOrigin) {
+				send_add = true;
 				value_handles[jjj] = pose.activeOrigin;
 			}
 
@@ -228,34 +253,53 @@ int main(int argc, char* argv[]) {
 					pose.pose = device_poses[info.trackedDeviceIndex];
 				}
 				else {
-					printf("no valid pose found for '%s'\n", actions[jjj]);
+					//printf("no valid pose found for '%s'\n", actions[jjj]);
 					continue;
 				}
 			}
 
 			// i suppose we have the option of allocating a static buffer for this, and avoiding allocation
-			/*std::optional<std::vector<char>> controller_type = get_string_prop(system, info.trackedDeviceIndex, ETrackedDeviceProperty::Prop_ControllerType_String);
+			std::optional<std::vector<char>> controller_type = get_string_prop(system, info.trackedDeviceIndex, ETrackedDeviceProperty::Prop_ControllerType_String);
 			if (!controller_type.has_value()) {
 				continue;
 			}
 
-			printf("%s\n", controller_type.value().data());*/
+			//printf("%s\n", controller_type.value().data());
 
 			if (jjj != BodyPosition::Head) {
 				// printf("skipping index %d\n", jjj);
 				continue;
 			}
 
+			if (send_add) {
+				fprintf(trackers_pipe, "ADD %d %d %s\n", info.trackedDeviceIndex, jjj, controller_type.value().data());
+				printf("ADD %d %d %s\n", info.trackedDeviceIndex, jjj, controller_type.value().data());
+			}
+
 			HmdQuaternion_t rot = GetRotation(pose.pose.mDeviceToAbsoluteTracking);
 			HmdVector3_t pos = GetPosition(pose.pose.mDeviceToAbsoluteTracking);
 
+			// ensure we're using the same format as the driver for now.
+			std::string s = std::to_string(pos.v[0]) +
+				" " + std::to_string(pos.v[1]) +
+				" " + std::to_string(pos.v[2]) +
+				" " + std::to_string(rot.w) +
+				" " + std::to_string(rot.x) +
+				" " + std::to_string(rot.y) +
+				" " + std::to_string(rot.z);
+
 			// TODO: binary protocol?
-			printf("%f %f %f %f %f %f %f\n", pos.v[0], pos.v[1], pos.v[2], rot.w, rot.x, rot.y, rot.z);
+			//fprintf(trackers_pipe, "UPD %d %f %f %f %f %f %f %f\n", info.trackedDeviceIndex, pos.v[0], pos.v[1], pos.v[2], rot.w, rot.x, rot.y, rot.z);
+			//printf("UPD %d %f %f %f %f %f %f %f\n", info.trackedDeviceIndex, pos.v[0], pos.v[1], pos.v[2], rot.w, rot.x, rot.y, rot.z);
+			fprintf(trackers_pipe, "UPD %d %s\n", info.trackedDeviceIndex, s.c_str());
+			printf("UPD %d %s\n", info.trackedDeviceIndex, s.c_str());
 		}
 	} while (!got_sigint);
 	printf("cleaning up\n");
-	shutdown:
+shutdown:
 	VR_Shutdown();
-	ret:
+close_pipe:
+	fclose(trackers_pipe);
+ret:
 	return ret;
 }
