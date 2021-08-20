@@ -8,6 +8,7 @@
 #include <optional>
 #include "pathtools_excerpt.h"
 #include <cerrno>
+#include <memory>
 
 using namespace vr;
 
@@ -54,9 +55,9 @@ static const char* actions[BodyPosition::BodyPosition_Count] = {
 	"/actions/main/in/chest"
 };
 
-VRActionHandle_t get_action(const char* action_path) {
+VRActionHandle_t get_action(IVRInput* input, const char* action_path) {
 	VRActionHandle_t handle = k_ulInvalidInputValueHandle;
-	EVRInputError error = VRInput()->GetActionHandle(action_path, &handle);
+	EVRInputError error = input->GetActionHandle(action_path, &handle);
 	if (error != VRInputError_None) {
 		printf("Error: Unable to get action handle '%s': %d", action_path, error);
 		// consider exiting?
@@ -127,61 +128,61 @@ void handle_signal(int num) {
 	}
 }
 
+void shutdown_vr(IVRSystem* _system) {
+	VR_Shutdown();
+}
+
 int main(int argc, char* argv[]) {
-	int ret = EXIT_SUCCESS;
 	EVRInitError error = VRInitError_None;
 	EVRInputError input_error = VRInputError_None;
 
 	signal(SIGINT, handle_signal);
 
 	// note: still windows only, i just wanted to be able to fprintf
-	FILE* trackers_pipe = fopen(pipe_name, "w");
+	std::unique_ptr<FILE, decltype(&fclose)> trackers_pipe(fopen(pipe_name, "w"), &fclose);
 	if (!trackers_pipe) {
 		printf("%s\n", strerror(errno));
-		ret = EXIT_FAILURE;
-		goto ret;
+		return EXIT_FAILURE;
 	}
 
-	setvbuf(trackers_pipe, nullptr, _IONBF, 0);
+	setvbuf(trackers_pipe.get(), nullptr, _IONBF, 0);
 
 	// maybe prefer Background?
-	IVRSystem *system = VR_Init(&error, VRApplication_Overlay);
+	std::unique_ptr<IVRSystem, decltype(&shutdown_vr)> system(VR_Init(&error, VRApplication_Overlay), &shutdown_vr);
+	IVRInput* input = VRInput();
+	
 	if (error != VRInitError_None) {
 		system = nullptr;
 		printf("Unable to init VR runtime: %s\n", VR_GetVRInitErrorAsEnglishDescription(error));
-		ret = EXIT_FAILURE;
-		goto close_pipe;
+		return EXIT_FAILURE;
 	}
 
 	// Ensure VR Compositor is available, otherwise getting poses causes a crash (openvr v1.3.22)
 	if (!VRCompositor()) {
 		printf("Failed to initialize VR compositor!\n");
-		ret = EXIT_FAILURE;
-		goto shutdown;
+		return EXIT_FAILURE;
 	}
 
 	{
 		std::string actionsFileName = Path_MakeAbsolute(actions_path, Path_StripFilename(Path_GetExecutablePath()));
 
-		if ((input_error = VRInput()->SetActionManifestPath(actionsFileName.c_str())) != EVRInputError::VRInputError_None) {
+		if ((input_error = input->SetActionManifestPath(actionsFileName.c_str())) != EVRInputError::VRInputError_None) {
 			printf("Error: IVRInput::SetActionManifectPath: %d", input_error);
-			ret = EXIT_FAILURE;
-			goto shutdown;
+			return EXIT_FAILURE;
 		}
 	}
 
 	VRActionHandle_t action_handles[BodyPosition::BodyPosition_Count];
 	for (unsigned int iii = 0; iii < BodyPosition::BodyPosition_Count; ++iii) {
-		action_handles[iii] = get_action(actions[iii]);
+		action_handles[iii] = get_action(input, actions[iii]);
 	}
 
 	VRActionSetHandle_t action_set_handle;
 	{
-		EVRInputError error = VRInput()->GetActionSetHandle("/actions/main", &action_set_handle);
+		EVRInputError error = input->GetActionSetHandle("/actions/main", &action_set_handle);
 		if (error != EVRInputError::VRInputError_None) {
 			printf("Error: VRInput::GetActionSetHandle: %d", error);
-			ret = EXIT_FAILURE;
-			goto shutdown;
+			return EXIT_FAILURE;
 		}
 	}
 
@@ -212,8 +213,8 @@ int main(int argc, char* argv[]) {
 		TrackedDevicePose_t device_poses[k_unMaxTrackedDeviceCount];
 
 		
-		EVRInputError error = VRInput()->UpdateActionState(&actionSet, sizeof(actionSet), 1);
-		VRSystem()->GetDeviceToAbsoluteTrackingPose(TrackingUniverseRawAndUncalibrated, 0, device_poses, k_unMaxTrackedDeviceCount);
+		EVRInputError error = input->UpdateActionState(&actionSet, sizeof(actionSet), 1);
+		system->GetDeviceToAbsoluteTrackingPose(TrackingUniverseRawAndUncalibrated, 0, device_poses, k_unMaxTrackedDeviceCount);
 		if (error != EVRInputError::VRInputError_None) {
 			printf("Error: IVRInput::UpdateActionState: %d\n", error);
 		}
@@ -222,7 +223,7 @@ int main(int argc, char* argv[]) {
 			//printf("%s\n", actions[jjj]);
 			InputPoseActionData_t pose;
 			// Consider Standing universe
-			error = VRInput()->GetPoseActionDataRelativeToNow(action_handles[jjj], ETrackingUniverseOrigin::TrackingUniverseRawAndUncalibrated, 0, &pose, sizeof(pose), k_ulInvalidInputValueHandle);
+			error = input->GetPoseActionDataRelativeToNow(action_handles[jjj], ETrackingUniverseOrigin::TrackingUniverseRawAndUncalibrated, 0, &pose, sizeof(pose), k_ulInvalidInputValueHandle);
 			if (error != EVRInputError::VRInputError_None) {
 				printf("Error: IVRInput::GetPoseActionDataRelativeToNow: %d\n", error);
 				continue;
@@ -242,7 +243,7 @@ int main(int argc, char* argv[]) {
 
 			// TODO: Filter out SlimeVR Generated trackers, if present.
 			InputOriginInfo_t info;
-			error = VRInput()->GetOriginTrackedDeviceInfo(pose.activeOrigin, &info, sizeof(info));
+			error = input->GetOriginTrackedDeviceInfo(pose.activeOrigin, &info, sizeof(info));
 			if (error != EVRInputError::VRInputError_None) {
 				printf("Error: IVRInput::GetOriginTrackedDeviceInfo: %d\n", error);
 				continue;
@@ -259,7 +260,7 @@ int main(int argc, char* argv[]) {
 			}
 
 			// i suppose we have the option of allocating a static buffer for this, and avoiding allocation
-			std::optional<std::vector<char>> controller_type = get_string_prop(system, info.trackedDeviceIndex, ETrackedDeviceProperty::Prop_ControllerType_String);
+			std::optional<std::vector<char>> controller_type = get_string_prop(system.get(), info.trackedDeviceIndex, ETrackedDeviceProperty::Prop_ControllerType_String);
 			if (!controller_type.has_value()) {
 				continue;
 			}
@@ -272,7 +273,7 @@ int main(int argc, char* argv[]) {
 			}
 
 			if (send_add) {
-				fprintf(trackers_pipe, "ADD %d %d %s\n", info.trackedDeviceIndex, jjj, controller_type.value().data());
+				fprintf(trackers_pipe.get(), "ADD %d %d %s\n", info.trackedDeviceIndex, jjj, controller_type.value().data());
 				printf("ADD %d %d %s\n", info.trackedDeviceIndex, jjj, controller_type.value().data());
 			}
 
@@ -291,15 +292,10 @@ int main(int argc, char* argv[]) {
 			// TODO: binary protocol?
 			//fprintf(trackers_pipe, "UPD %d %f %f %f %f %f %f %f\n", info.trackedDeviceIndex, pos.v[0], pos.v[1], pos.v[2], rot.w, rot.x, rot.y, rot.z);
 			//printf("UPD %d %f %f %f %f %f %f %f\n", info.trackedDeviceIndex, pos.v[0], pos.v[1], pos.v[2], rot.w, rot.x, rot.y, rot.z);
-			fprintf(trackers_pipe, "UPD %d %s\n", info.trackedDeviceIndex, s.c_str());
+			fprintf(trackers_pipe.get(), "UPD %d %s\n", info.trackedDeviceIndex, s.c_str());
 			printf("UPD %d %s\n", info.trackedDeviceIndex, s.c_str());
 		}
 	} while (!got_sigint);
-	printf("cleaning up\n");
-shutdown:
-	VR_Shutdown();
-close_pipe:
-	fclose(trackers_pipe);
-ret:
-	return ret;
+
+	return 0;
 }
