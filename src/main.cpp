@@ -1,5 +1,4 @@
 #include <openvr.h>
-#include <cstdio>
 #include <csignal>
 #include <string>
 #include <thread>
@@ -8,6 +7,10 @@
 #include <optional>
 #include <cerrno>
 #include <memory>
+#include <fmt/core.h>
+#include <fmt/ostream.h>
+#include <iostream>
+#include <fstream>
 
 #include "pathtools_excerpt.h"
 #include "matrix_utils.h"
@@ -60,10 +63,11 @@ static const char* actions[BodyPosition::BodyPosition_Count] = {
 };
 
 struct OpenVRStuff {
+	// note: still windows only, i just wanted to be able to format
+	std::ofstream trackers_pipe = std::ofstream(pipe_name, std::ios_base::binary | std::ios_base::ate);
+
 	IVRSystem* system = nullptr;
 	IVRInput* input = nullptr;
-	
-	FILE* trackers_pipe = nullptr;
 
 	VRActiveActionSet_t actionSet = { 0 };
 
@@ -73,7 +77,7 @@ struct OpenVRStuff {
 		VRActionHandle_t handle = k_ulInvalidInputValueHandle;
 		EVRInputError error = (EVRInputError)input->GetActionHandle(action_path, &handle);
 		if (error != VRInputError_None) {
-			printf("Error: Unable to get action handle '%s': %d", action_path, error);
+			fmt::print("Error: Unable to get action handle '{}': {}", action_path, error);
 			// consider exiting?
 		}
 
@@ -86,7 +90,7 @@ struct OpenVRStuff {
 
 		if (size == 0 || (prop_error != TrackedProp_Success && prop_error != TrackedProp_BufferTooSmall)) {
 			if (prop_error != TrackedProp_Success) {
-				printf("Error: size getting IVRSystem::GetStringTrackedDeviceProperty(%d): %d\n", prop, prop_error);
+				fmt::print("Error: size getting IVRSystem::GetStringTrackedDeviceProperty({}): {}\n", prop, prop_error);
 			}
 
 			return std::nullopt;
@@ -96,7 +100,7 @@ struct OpenVRStuff {
 		system->GetStringTrackedDeviceProperty(index, prop, vec.data(), size, &prop_error);
 
 		if (prop_error != TrackedProp_Success) {
-			printf("Error: data getting IVRSystem::GetStringTrackedDeviceProperty(%d): %d\n", prop, prop_error);
+			fmt::print("Error: data getting IVRSystem::GetStringTrackedDeviceProperty({}): {}\n", prop, prop_error);
 			return std::nullopt;
 		}
 
@@ -107,7 +111,7 @@ struct OpenVRStuff {
 		InputOriginInfo_t info;
 		EVRInputError error = input->GetOriginTrackedDeviceInfo(value_handle, &info, sizeof(info));
 		if (error != EVRInputError::VRInputError_None) {
-			printf("Error: IVRInput::GetOriginTrackedDeviceInfo: %d\n", error);
+			fmt::print("Error: IVRInput::GetOriginTrackedDeviceInfo: {}\n", error);
 			return std::nullopt;
 		}
 
@@ -118,15 +122,13 @@ struct OpenVRStuff {
 		TrackedDevicePose_t device_poses[k_unMaxTrackedDeviceCount];
 
 		system->GetDeviceToAbsoluteTrackingPose(tracking_origin, 0, device_poses, k_unMaxTrackedDeviceCount);
-		// 0 is the hmd
 		for (unsigned int jjj = 0; jjj < BodyPosition::BodyPosition_Count; ++jjj) {
-			//printf("%s\n", actions[jjj]);
 			VRInputValueHandle_t activeOrigin = value_handles[jjj];
 			if (activeOrigin == k_ulInvalidInputValueHandle) {
 				continue;
 			}
 
-			// TODO: should we get the index every tick, or should we just do that outside?
+			// TODO: profile this. should we get the index every tick, or should we just do that outside?
 			std::optional<TrackedDeviceIndex_t> trackedDeviceIndex = GetIndex(activeOrigin);
 			if (!trackedDeviceIndex.has_value()) {
 				// already printed a message about this in GetIndex, just continue.
@@ -137,30 +139,58 @@ struct OpenVRStuff {
 
 			// TODO: Filter out SlimeVR Generated trackers, if present.
 
-			if (jjj != BodyPosition::Head) {
-				// printf("skipping index %d\n", jjj);
-				continue;
-			} 
-
 			HmdQuaternion_t rot = GetRotation(pose.mDeviceToAbsoluteTracking);
 			HmdVector3_t pos = GetPosition(pose.mDeviceToAbsoluteTracking);
 
-			// ensure we're using the same format as the driver for now.
-			std::string s = std::to_string(pos.v[0]) +
-				" " + std::to_string(pos.v[1]) +
-				" " + std::to_string(pos.v[2]) +
-				" " + std::to_string(rot.w) +
-				" " + std::to_string(rot.x) +
-				" " + std::to_string(rot.y) +
-				" " + std::to_string(rot.z);
-
-			// TODO: binary protocol?
-			if (trackers_pipe) {
-				//fprintf(trackers_pipe, "UPD %d %f %f %f %f %f %f %f\n", info.trackedDeviceIndex, pos.v[0], pos.v[1], pos.v[2], rot.w, rot.x, rot.y, rot.z);
-				fprintf(trackers_pipe, "UPD %d %s\n", trackedDeviceIndex.value(), s.c_str());
+			// TODO: no point in running the tick if we can't write?
+			if (trackers_pipe.is_open()) {
+				fmt::print(trackers_pipe, "UPD {:d} {:f} {:f} {:f} {:f} {:f} {:f} {:f}\n", trackedDeviceIndex.value(), pos.v[0], pos.v[1], pos.v[2], rot.w, rot.x, rot.y, rot.z);
+				trackers_pipe.flush();
 			}
-			//printf("UPD %d %f %f %f %f %f %f %f\n", info.trackedDeviceIndex, pos.v[0], pos.v[1], pos.v[2], rot.w, rot.x, rot.y, rot.z);
-			printf("UPD %d %s\n", trackedDeviceIndex.value(), s.c_str());
+		}
+	}
+
+	
+	void UpdateValueHandles(VRActionHandle_t(&actions)[BodyPosition::BodyPosition_Count]) {
+		EVRInputError input_error = input->UpdateActionState(&actionSet, sizeof(actionSet), 1);
+		if (input_error != EVRInputError::VRInputError_None) {
+			fmt::print("Error: IVRInput::UpdateActionState: {}\n", input_error);
+			return;
+		}
+
+		for (unsigned int jjj = 0; jjj < BodyPosition::BodyPosition_Count; ++jjj) {
+			InputPoseActionData_t pose;
+			input_error = input->GetPoseActionDataRelativeToNow(actions[jjj], tracking_origin, 0, &pose, sizeof(pose), 0);
+			if (input_error != EVRInputError::VRInputError_None) {
+				fmt::print("Error: IVRInput::GetPoseActionDataRelativeToNow: {}\n", input_error);
+				continue;
+			}
+
+			// TODO: this could maybe still use some refactoring.
+			// TODO: report STAtus
+			if (pose.bActive) {
+				if (value_handles[jjj] != pose.activeOrigin) {
+					value_handles[jjj] = pose.activeOrigin;
+					std::optional<TrackedDeviceIndex_t> trackedDeviceIndex = GetIndex(pose.activeOrigin);
+					if (!trackedDeviceIndex.has_value()) {
+						// already printed a message about this in GetIndex, just continue.
+						continue;
+					}
+
+					std::optional<std::vector<char>> controller_type = GetStringProp(trackedDeviceIndex.value(), ETrackedDeviceProperty::Prop_ControllerType_String);
+					if (!controller_type.has_value()) {
+						// uhhhhhhhhhhhhhhh
+						if (trackers_pipe.is_open()) {
+							fmt::print(trackers_pipe, "ADD {} {} Index{:d}\n", trackedDeviceIndex.value(), jjj, trackedDeviceIndex.value());
+						}
+					}
+					else {
+						if (trackers_pipe.is_open()) {
+							fmt::print(trackers_pipe, "ADD {} {} {}\n", trackedDeviceIndex.value(), jjj, controller_type.value().data());
+						}
+					}
+				}
+			}
 		}
 	}
 };
@@ -189,22 +219,16 @@ int main(int argc, char* argv[]) {
 
 	OpenVRStuff stuff;
 
-	// note: still windows only, i just wanted to be able to fprintf
-	std::unique_ptr<FILE, decltype(&fclose)> trackers_pipe(fopen(pipe_name, "w"), &fclose);
-	if (!trackers_pipe) {
-		printf("Error opening pipe: '%s'\nContinuing...\n", strerror(errno));
-		//return EXIT_FAILURE;
-	}
-	else {
-		setvbuf(trackers_pipe.get(), nullptr, _IONBF, 0);
-		stuff.trackers_pipe = trackers_pipe.get();
+	if (stuff.trackers_pipe.fail()) {
+		std::cout << "Error opening pipe. Continuing..." << std::endl;
+		// TODO: attempt to re-open pipe periodically, to support server coming up after application?
 	}
 
 	// maybe prefer Background?
 	std::unique_ptr<IVRSystem, decltype(&shutdown_vr)> system(VR_Init(&init_error, VRApplication_Overlay), &shutdown_vr);
 	if (init_error != VRInitError_None) {
 		system = nullptr;
-		printf("Unable to init VR runtime: %s\n", VR_GetVRInitErrorAsEnglishDescription(init_error));
+		fmt::print("Unable to init VR runtime: {}\n", VR_GetVRInitErrorAsEnglishDescription(init_error));
 		return EXIT_FAILURE;
 	}
 
@@ -213,7 +237,7 @@ int main(int argc, char* argv[]) {
 
 	// Ensure VR Compositor is available, otherwise getting poses causes a crash (openvr v1.3.22)
 	if (!VRCompositor()) {
-		printf("Failed to initialize VR compositor!\n");
+		std::cout << "Failed to initialize VR compositor!" << std::endl;
 		return EXIT_FAILURE;
 	}
 
@@ -221,7 +245,7 @@ int main(int argc, char* argv[]) {
 		std::string actionsFileName = Path_MakeAbsolute(actions_path, Path_StripFilename(Path_GetExecutablePath()));
 
 		if ((input_error = stuff.input->SetActionManifestPath(actionsFileName.c_str())) != EVRInputError::VRInputError_None) {
-			printf("Error: IVRInput::SetActionManifectPath: %d", input_error);
+			fmt::print("Error: IVRInput::SetActionManifectPath: {}\n", input_error);
 			return EXIT_FAILURE;
 		}
 	}
@@ -233,7 +257,7 @@ int main(int argc, char* argv[]) {
 
 	VRActionSetHandle_t action_set_handle;
 	if ((input_error = stuff.input->GetActionSetHandle("/actions/main", &action_set_handle)) != EVRInputError::VRInputError_None) {
-		printf("Error: VRInput::GetActionSetHandle: %d", input_error);
+		fmt::print("Error: VRInput::GetActionSetHandle: {}\n", input_error);
 		return EXIT_FAILURE;
 	}
 
@@ -245,71 +269,38 @@ int main(int argc, char* argv[]) {
 		0
 	};
 
-	do {
-		// wait for event
-		while (true) {
-			VREvent_t event;
-			if (!system->PollNextEvent(&event, sizeof(event))) {
-				std::this_thread::yield();
-				continue;
-			}
+	stuff.UpdateValueHandles(action_handles);
 
-			// TODO: re-poll device indexes when events say we should?
-
-			if (event.eventType == VREvent_Quit) {
+	// event loop
+	while (!should_exit) {
+		VREvent_t event;
+		if (system->PollNextEvent(&event, sizeof(event))) {
+			switch (event.eventType) {
+			case VREvent_Quit:
 				return 0;
-			}
 
-			if (event.eventType == 13337) {
-				break; // got our vendor event, let's send some data.
-			}
-		}
+			// TODO: add more events, or remove some events?
+			case VREvent_TrackedDeviceActivated:
+			case VREvent_TrackedDeviceDeactivated:
+			case VREvent_TrackedDeviceRoleChanged:
+			case VREvent_TrackedDeviceUpdated:
+			case VREvent_DashboardDeactivated:
+				//stuff.UpdateValueHandles(action_handles);
+				break;
 
-		// TODO: do this in respose to controller appearing event or something -- we aren't using the position data from this.
-		input_error = stuff.input->UpdateActionState(&stuff.actionSet, sizeof(stuff.actionSet), 1);
-		if (input_error != EVRInputError::VRInputError_None) {
-			printf("Error: IVRInput::UpdateActionState: %d\n", input_error);
-		}
-		else {
-			for (unsigned int jjj = 0; jjj < BodyPosition::BodyPosition_Count; ++jjj) {
-				InputPoseActionData_t pose;
-				input_error = stuff.input->GetPoseActionDataRelativeToNow(action_handles[jjj], tracking_origin, 0, &pose, sizeof(pose), 0);
-				if (input_error != EVRInputError::VRInputError_None) {
-					printf("Error: IVRInput::GetPoseActionDataRelativeToNow: %d\n", input_error);
-					continue;
-				}
-
-				// TODO: this could probably still use some refactoring.
-				if (pose.bActive) {
-					if (stuff.value_handles[jjj] != pose.activeOrigin) {
-						stuff.value_handles[jjj] = pose.activeOrigin;
-						std::optional<TrackedDeviceIndex_t> trackedDeviceIndex = stuff.GetIndex(pose.activeOrigin);
-						if (!trackedDeviceIndex.has_value()) {
-							// already printed a message about this in GetIndex, just continue.
-							continue;
-						}
-
-						std::optional<std::vector<char>> controller_type = stuff.GetStringProp(trackedDeviceIndex.value(), ETrackedDeviceProperty::Prop_ControllerType_String);
-						if (!controller_type.has_value()) {
-							// uhhhhhhhhhhhhhhh
-							if (stuff.trackers_pipe) {
-								fprintf(stuff.trackers_pipe, "ADD %d %d Index%d\n", trackedDeviceIndex.value(), jjj, trackedDeviceIndex.value());
-							}
-							printf("ADD %d %d Index%d\n", trackedDeviceIndex.value(), jjj, trackedDeviceIndex.value());
-						}
-						else {
-							if (stuff.trackers_pipe) {
-								fprintf(stuff.trackers_pipe, "ADD %d %d %s\n", trackedDeviceIndex.value(), jjj, controller_type.value().data());
-							}
-							printf("ADD %d %d %s\n", trackedDeviceIndex.value(), jjj, controller_type.value().data());
-						}
-					}
-				}
+			default:
+				fmt::print("Unhandled event: {}({})\n", stuff.system->GetEventTypeNameFromEnum((EVREventType)event.eventType), event.eventType);
 			}
 		}
+
+		// TODO: don't do this every loop, we really shouldn't need to.
+		stuff.UpdateValueHandles(action_handles);
 
 		stuff.Tick();
-	} while (!should_exit);
+
+		// run as fast as possible (for now), but make sure that we give time back to the OS.
+		std::this_thread::yield();
+	}
 
 	return 0;
 }
