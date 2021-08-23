@@ -41,11 +41,6 @@ enum BodyPosition {
 	BodyPosition_Count
 };
 
-struct Role {
-	enum BodyPosition position;
-	const char* input_source_path;
-};
-
 static const char* actions[BodyPosition::BodyPosition_Count] = {
 	"/actions/main/in/head",
 	"/actions/main/in/left_hand",
@@ -62,9 +57,99 @@ static const char* actions[BodyPosition::BodyPosition_Count] = {
 	"/actions/main/in/chest"
 };
 
+class Tracker {
+	std::ofstream &trackers_pipe;
+	HmdQuaternion_t current_rotation = { 0 };
+	HmdVector3_t current_position = { 0 };
+	TrackedDeviceIndex_t index = k_unTrackedDeviceIndexInvalid;
+
+	bool current_valid = false;
+
+	enum Status {
+		Disconnected = 0,
+		Ok = 1,
+		Busy = 2,
+		Error = 3,
+		Occluded = 4
+	};
+
+public:
+	Tracker(std::ofstream &pipe): trackers_pipe(pipe) {}
+
+	void SendStatus(Status status, bool should_flush = true) {
+		fmt::print(trackers_pipe, "STA {} {}\n", index, status);
+		if (should_flush) {
+			trackers_pipe.flush();
+		}
+	}
+
+	void Update(TrackedDevicePose_t pose) {
+		if (pose.bPoseIsValid) {
+			if (!current_valid) {
+				current_valid = true;
+				// we're going to flush momentarily when we send the position update.
+				SendStatus(Ok, false);
+			}
+
+			HmdQuaternion_t new_rotation = GetRotation(pose.mDeviceToAbsoluteTracking);
+			HmdVector3_t new_position = GetPosition(pose.mDeviceToAbsoluteTracking);
+
+			// only update if there's a difference
+			if (
+				current_rotation.w != new_rotation.w || current_rotation.x != new_rotation.x ||
+				current_rotation.y != new_rotation.y || current_rotation.z != new_rotation.z ||
+				current_position.v[0] != new_position.v[0] || current_position.v[1] != new_position.v[1] ||
+				current_position.v[2] != new_position.v[2]
+			) {
+				current_position = new_position;
+				current_rotation = new_rotation;
+				// send our UPD message
+				fmt::print(
+					trackers_pipe, "UPD {:d} {:f} {:f} {:f} {:f} {:f} {:f} {:f}\n",
+					index,
+					current_position.v[0], current_position.v[1], current_position.v[2],
+					current_rotation.w, current_rotation.x, current_rotation.y, current_rotation.z
+				);
+				trackers_pipe.flush();
+			}
+		} else if (current_valid) {
+			current_valid = false;
+			current_position = {0};
+			current_rotation = {0};
+			if (!pose.bDeviceIsConnected) {
+				SendStatus(Disconnected);
+			} else if (pose.eTrackingResult == ETrackingResult::TrackingResult_Running_OutOfRange) {
+				SendStatus(Occluded);
+			} else {
+				SendStatus(Error);
+			}
+		}
+	}
+
+	template <typename F>
+	void SetIndex(TrackedDeviceIndex_t idx, BodyPosition pos, F &&get_name) {
+		if (index != k_unTrackedDeviceIndexInvalid) {
+			fmt::print("Warning: Tracked Device Index changed from {} to {}. Report this, because assumptions were incorrectly made.", index, idx);
+		}
+
+		if (index != idx) {
+			index = idx;
+
+			fmt::print(trackers_pipe, "ADD {} {} {}\n", index, pos, get_name());
+			// not flushing because we are totally going to be sending position data soon which we will flush
+		}
+	}
+};
+
 struct OpenVRStuff {
 	// note: still windows only, i just wanted to be able to format
-	std::ofstream trackers_pipe = std::ofstream(pipe_name, std::ios_base::binary | std::ios_base::ate);
+	std::ofstream &trackers_pipe;
+
+	OpenVRStuff(std::ofstream &pipe): trackers_pipe(pipe), trackers {
+		// UGH
+		Tracker(pipe), Tracker(pipe), Tracker(pipe), Tracker(pipe), Tracker(pipe), Tracker(pipe), Tracker(pipe),
+		Tracker(pipe), Tracker(pipe), Tracker(pipe), Tracker(pipe), Tracker(pipe), Tracker(pipe)
+	} {}
 
 	IVRSystem* system = nullptr;
 	IVRInput* input = nullptr;
@@ -72,6 +157,7 @@ struct OpenVRStuff {
 	VRActiveActionSet_t actionSet = { 0 };
 
 	VRInputValueHandle_t value_handles[BodyPosition::BodyPosition_Count] = { k_ulInvalidInputValueHandle };
+	Tracker trackers[BodyPosition::BodyPosition_Count];
 
 	VRActionHandle_t GetAction(const char* action_path) {
 		VRActionHandle_t handle = k_ulInvalidInputValueHandle;
@@ -84,7 +170,7 @@ struct OpenVRStuff {
 		return handle;
 	}
 
-	std::optional<std::vector<char>> GetStringProp(TrackedDeviceIndex_t index, ETrackedDeviceProperty prop) {
+	std::optional<std::string> GetStringProp(TrackedDeviceIndex_t index, ETrackedDeviceProperty prop) {
 		vr::ETrackedPropertyError prop_error = ETrackedPropertyError::TrackedProp_Success;
 		uint32_t size = system->GetStringTrackedDeviceProperty(index, prop, nullptr, 0, &prop_error);
 
@@ -96,15 +182,15 @@ struct OpenVRStuff {
 			return std::nullopt;
 		}
 
-		std::vector<char> vec = std::vector<char>(size);
-		system->GetStringTrackedDeviceProperty(index, prop, vec.data(), size, &prop_error);
+		std::string prop_value = std::string(size, '\0');
+		system->GetStringTrackedDeviceProperty(index, prop, prop_value.data(), size, &prop_error);
 
 		if (prop_error != TrackedProp_Success) {
 			fmt::print("Error: data getting IVRSystem::GetStringTrackedDeviceProperty({}): {}\n", prop, prop_error);
 			return std::nullopt;
 		}
 
-		return std::make_optional(vec);
+		return std::make_optional(prop_value);
 	}
 
 	std::optional<TrackedDeviceIndex_t> GetIndex(VRInputValueHandle_t value_handle) {
@@ -135,22 +221,14 @@ struct OpenVRStuff {
 				continue;
 			}
 
+			// TODO: Filter out SlimeVR Generated trackers, if applicable.
+
 			TrackedDevicePose_t &pose = device_poses[trackedDeviceIndex.value()];
 
-			// TODO: Filter out SlimeVR Generated trackers, if present.
-
-			HmdQuaternion_t rot = GetRotation(pose.mDeviceToAbsoluteTracking);
-			HmdVector3_t pos = GetPosition(pose.mDeviceToAbsoluteTracking);
-
-			// TODO: no point in running the tick if we can't write?
-			if (trackers_pipe.is_open()) {
-				fmt::print(trackers_pipe, "UPD {:d} {:f} {:f} {:f} {:f} {:f} {:f} {:f}\n", trackedDeviceIndex.value(), pos.v[0], pos.v[1], pos.v[2], rot.w, rot.x, rot.y, rot.z);
-				trackers_pipe.flush();
-			}
+			trackers[jjj].Update(pose);
 		}
 	}
 
-	
 	void UpdateValueHandles(VRActionHandle_t(&actions)[BodyPosition::BodyPosition_Count]) {
 		EVRInputError input_error = input->UpdateActionState(&actionSet, sizeof(actionSet), 1);
 		if (input_error != EVRInputError::VRInputError_None) {
@@ -166,8 +244,6 @@ struct OpenVRStuff {
 				continue;
 			}
 
-			// TODO: this could maybe still use some refactoring.
-			// TODO: report STAtus
 			if (pose.bActive) {
 				if (value_handles[jjj] != pose.activeOrigin) {
 					value_handles[jjj] = pose.activeOrigin;
@@ -177,18 +253,18 @@ struct OpenVRStuff {
 						continue;
 					}
 
-					std::optional<std::vector<char>> controller_type = GetStringProp(trackedDeviceIndex.value(), ETrackedDeviceProperty::Prop_ControllerType_String);
-					if (!controller_type.has_value()) {
-						// uhhhhhhhhhhhhhhh
-						if (trackers_pipe.is_open()) {
-							fmt::print(trackers_pipe, "ADD {} {} Index{:d}\n", trackedDeviceIndex.value(), jjj, trackedDeviceIndex.value());
+					auto get_name = [&, this]() {
+						auto controller_type = this->GetStringProp(trackedDeviceIndex.value(), ETrackedDeviceProperty::Prop_ControllerType_String);
+						if (!controller_type.has_value()) {
+							// uhhhhhhhhhhhhhhh
+							return fmt::format("Index{}", trackedDeviceIndex.value());
 						}
-					}
-					else {
-						if (trackers_pipe.is_open()) {
-							fmt::print(trackers_pipe, "ADD {} {} {}\n", trackedDeviceIndex.value(), jjj, controller_type.value().data());
+						else {
+							return controller_type.value();
 						}
-					}
+					};
+
+					trackers[jjj].SetIndex(trackedDeviceIndex.value(), (BodyPosition)jjj, get_name);
 				}
 			}
 		}
@@ -217,7 +293,8 @@ int main(int argc, char* argv[]) {
 
 	signal(SIGINT, handle_signal);
 
-	OpenVRStuff stuff;
+	auto pipe = std::ofstream(pipe_name, std::ios_base::binary | std::ios_base::ate);
+	OpenVRStuff stuff(pipe);
 
 	if (stuff.trackers_pipe.fail()) {
 		std::cout << "Error opening pipe. Continuing..." << std::endl;
