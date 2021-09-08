@@ -4,7 +4,8 @@
 		"app_key": "test.SlimeVRFeeder",
 		"launch_type": "binary",
 		"binary_path_windows": "SteamVR-Feeder-App.exe",
-		"is_dashboard_overlay": true,
+		"is_dashboard_overlay": false,
+		"action_manifest_path": "bindings/actions.json",
 
 		"strings": {
 			"en_us": {

@@ -18,7 +18,7 @@
 using namespace vr;
 
 // TODO: Temp Path
-static const char* actions_path = "../../../bindings/actions.json";
+static const char* actions_path = "./bindings/actions.json";
 static const char* pipe_name = "\\\\.\\pipe\\SlimeVRInput";
 
 // Consider Standing universe
