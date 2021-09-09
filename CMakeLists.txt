@@ -38,7 +38,10 @@ set_property(TARGET "${PROJECT_NAME}" PROPERTY CXX_STANDARD 17)
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "Header Files" FILES ${HEADERS})
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "Source Files" FILES ${SOURCES})
 
-add_custom_command(TARGET "${PROJECT_NAME}" POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different "${OPENVR_DLL}" $<TARGET_FILE_DIR:${PROJECT_NAME}>)
+#happens post-build
+#add_custom_command(TARGET "${PROJECT_NAME}" POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different "${OPENVR_DLL}" $<TARGET_FILE_DIR:${PROJECT_NAME}>)
+# happens during confiuration
+file(COPY bindings manifest.vrmanifest "${OPENVR_DLL}" DESTINATION .)
 
 install(DIRECTORY "${PROJECT_SOURCE_DIR}/bindings"
     DESTINATION "."
