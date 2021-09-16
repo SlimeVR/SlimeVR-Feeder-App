@@ -102,9 +102,12 @@ public:
 
 	void SendStatus(Status status, bool should_flush = true) {
 		fmt::print(trackers_pipe, "STA {} {}\n", index, status);
-		fmt::print("Device (Index {}) status: {}", index, statusNames[status]);
+		fmt::print("Device (Index {}) status: {}\n", index, statusNames[status]);
 		if (should_flush) {
 			trackers_pipe.flush();
+		}
+		if (trackers_pipe.fail()) {
+			fmt::print("Warning: failed to write/flush to pip\n")
 		}
 	}
 
@@ -164,10 +167,13 @@ public:
 
 			fmt::print(trackers_pipe, "ADD {} {} {}\n", index, pos, name);
 			// log it.
-			fmt::print("Found device \"{}\" at {} with index {}", name, positionNames[pos], index);
+			fmt::print("Found device \"{}\" at {} with index {}\n", name, positionNames[pos], index);
 			// not flushing because we are totally going to be sending position data soon which we will flush
 			// except maybe there were issues related to this so *let's flush it*
 			trackers_pipe.flush();
+			if (trackers_pipe.fail()) {
+				fmt::print("Warning: failed to write/flush to pipe\n")
+			}
 		}
 	}
 };
