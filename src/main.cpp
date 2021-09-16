@@ -107,7 +107,7 @@ public:
 			trackers_pipe.flush();
 		}
 		if (trackers_pipe.fail()) {
-			fmt::print("Warning: failed to write/flush to pip\n")
+			fmt::print("Warning: failed to write/flush to pip\n");
 		}
 	}
 
@@ -172,7 +172,7 @@ public:
 			// except maybe there were issues related to this so *let's flush it*
 			trackers_pipe.flush();
 			if (trackers_pipe.fail()) {
-				fmt::print("Warning: failed to write/flush to pipe\n")
+				fmt::print("Warning: failed to write/flush to pipe\n");
 			}
 		}
 	}
