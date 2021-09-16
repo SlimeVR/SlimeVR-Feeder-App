@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0.0)
-project(SlimeVR-Feeder-App VERSION 0.1.0)
+project(SlimeVR-Feeder-App VERSION 0.1.1)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 include(CTest)

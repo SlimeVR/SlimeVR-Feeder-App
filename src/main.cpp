@@ -18,11 +18,11 @@
 using namespace vr;
 
 // TODO: Temp Path
-static const char* actions_path = "./bindings/actions.json";
-static const char* pipe_name = "\\\\.\\pipe\\SlimeVRInput";
+static constexpr char* actions_path = "./bindings/actions.json";
+static constexpr char* pipe_name = "\\\\.\\pipe\\SlimeVRInput";
 
 // Consider Standing universe
-static const ETrackingUniverseOrigin tracking_origin = ETrackingUniverseOrigin::TrackingUniverseRawAndUncalibrated;
+static constexpr ETrackingUniverseOrigin tracking_origin = ETrackingUniverseOrigin::TrackingUniverseRawAndUncalibrated;
 
 enum BodyPosition {
 	Head = 0,
@@ -41,7 +41,23 @@ enum BodyPosition {
 	BodyPosition_Count
 };
 
-static const char* actions[BodyPosition::BodyPosition_Count] = {
+static constexpr char* positionNames[BodyPosition::BodyPosition_Count] = {
+	"Head",
+	"LeftHand",
+	"RightHand",
+	"LeftFoot",
+	"RightFoot",
+	"LeftShoulder",
+	"RightShoulder",
+	"LeftElbow",
+	"RightElbow",
+	"LeftKnee",
+	"RightKnee",
+	"Waist",
+	"Chest"
+};
+
+static constexpr char* actions[BodyPosition::BodyPosition_Count] = {
 	"/actions/main/in/head",
 	"/actions/main/in/left_hand",
 	"/actions/main/in/right_hand",
@@ -73,11 +89,20 @@ class Tracker {
 		Occluded = 4
 	};
 
+	static constexpr char *statusNames[5] = {
+		"Disconnected",
+		"Ok",
+		"Busy",
+		"Error",
+		"Occluded"
+	};
+
 public:
 	Tracker(std::ofstream &pipe): trackers_pipe(pipe) {}
 
 	void SendStatus(Status status, bool should_flush = true) {
 		fmt::print(trackers_pipe, "STA {} {}\n", index, status);
+		fmt::print("Device (Index {}) status: {}", index, statusNames[status]);
 		if (should_flush) {
 			trackers_pipe.flush();
 		}
@@ -135,8 +160,14 @@ public:
 		if (index != idx) {
 			index = idx;
 
-			fmt::print(trackers_pipe, "ADD {} {} {}\n", index, pos, get_name());
+			auto name = get_name();
+
+			fmt::print(trackers_pipe, "ADD {} {} {}\n", index, pos, name);
+			// log it.
+			fmt::print("Found device \"{}\" at {} with index {}", name, positionNames[pos], index);
 			// not flushing because we are totally going to be sending position data soon which we will flush
+			// except maybe there were issues related to this so *let's flush it*
+			trackers_pipe.flush();
 		}
 	}
 };
@@ -362,11 +393,13 @@ int main(int argc, char* argv[]) {
 			case VREvent_TrackedDeviceRoleChanged:
 			case VREvent_TrackedDeviceUpdated:
 			case VREvent_DashboardDeactivated:
-				//stuff.UpdateValueHandles(action_handles);
+				// stuff.UpdateValueHandles(action_handles);
 				break;
 
 			default:
-				fmt::print("Unhandled event: {}({})\n", stuff.system->GetEventTypeNameFromEnum((EVREventType)event.eventType), event.eventType);
+				// fmt::print("Unhandled event: {}({})\n", stuff.system->GetEventTypeNameFromEnum((EVREventType)event.eventType), event.eventType);
+				// I'm not relying on events to actually trigger anything right now, so don't bother printing anything.
+				break;
 			}
 		}
 
