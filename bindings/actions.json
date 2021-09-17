@@ -134,6 +134,11 @@
       "name": "/actions/main/in/waist",
       "type": "pose",
       "requirement": "optional"
+    },
+    {
+      "name": "/actions/main/in/request_calibration",
+      "type": "boolean",
+      "requirement": "suggested"
     }
   ],
   "action_sets": [
