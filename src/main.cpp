@@ -107,7 +107,7 @@ public:
 			trackers_pipe.flush();
 		}
 		if (trackers_pipe.fail()) {
-			fmt::print("Warning: failed to write/flush to pip\n");
+			fmt::print("Warning: failed to write/flush to pipe\n");
 		}
 	}
 
@@ -254,7 +254,11 @@ struct OpenVRStuff {
 			// TODO: profile this. should we get the index every tick, or should we just do that outside?
 			std::optional<TrackedDeviceIndex_t> trackedDeviceIndex = GetIndex(activeOrigin);
 			if (!trackedDeviceIndex.has_value()) {
-				// already printed a message about this in GetIndex, just continue.
+				// this handle is no longer valid, discard it.
+				value_handles[jjj] = k_ulInvalidInputValueHandle;
+				// TODO: notify the server somehow.
+				// TODO: reset tracker object.
+				// already printed a message about this in GetIndex, so don't need additional logging.
 				continue;
 			}
 
