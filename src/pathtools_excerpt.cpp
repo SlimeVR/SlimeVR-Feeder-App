@@ -30,8 +30,16 @@ ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+#if defined(WIN32)
+
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+
+#elif defined(__unix__)
+
+#include <unistd.h>
+
+#endif
 #include <stdlib.h>
 #include "pathtools_excerpt.h"
 
@@ -199,15 +207,34 @@ std::string Path_MakeAbsolute(const std::string& sRelativePath, const std::strin
 /** Returns the path (including filename) to the current executable */
 std::string Path_GetExecutablePath()
 {
-    wchar_t* pwchPath = new wchar_t[MAX_UNICODE_PATH];
-    char* pchPath = new char[MAX_UNICODE_PATH_IN_UTF8];
-    ::GetModuleFileNameW(NULL, pwchPath, MAX_UNICODE_PATH);
-    WideCharToMultiByte(CP_UTF8, 0, pwchPath, -1, pchPath, MAX_UNICODE_PATH_IN_UTF8, NULL, NULL);
-    delete[] pwchPath;
+#if defined( _WIN32 )
+	wchar_t *pwchPath = new wchar_t[MAX_UNICODE_PATH];
+	char *pchPath = new char[MAX_UNICODE_PATH_IN_UTF8];
+	::GetModuleFileNameW( NULL, pwchPath, MAX_UNICODE_PATH );
+	WideCharToMultiByte( CP_UTF8, 0, pwchPath, -1, pchPath, MAX_UNICODE_PATH_IN_UTF8, NULL, NULL );
+	delete[] pwchPath;
 
-    std::string sPath = pchPath;
-    delete[] pchPath;
-    return sPath;
+	std::string sPath = pchPath;
+	delete[] pchPath;
+	return sPath;
+#elif defined( __unix__ )
+	char rchPath[1024];
+	size_t nBuff = sizeof( rchPath );
+	ssize_t nRead = readlink("/proc/self/exe", rchPath, nBuff-1 );
+	if ( nRead != -1 )
+	{
+		rchPath[ nRead ] = 0;
+		return rchPath;
+	}
+	else
+	{
+		return "";
+	}
+#else
+    #error Implement Plat_GetExecutablePath
+	// AssertMsg( false, "Implement Plat_GetExecutablePath" );
+	// return "";
+#endif
 }
 
 /** Returns the specified path without its filename */

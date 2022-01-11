@@ -1,0 +1,8 @@
+{
+    "name": "slimevr-feeder",
+    "version-string": "0.1.3",
+    "dependencies": [
+        "fmt",
+        "openvr"
+    ]
+}

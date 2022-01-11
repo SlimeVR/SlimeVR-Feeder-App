@@ -1,6 +1,3 @@
-[submodule "openvr"]
-	path = libraries/openvr
-	url = https://github.com/ValveSoftware/openvr.git
-[submodule "fmt"]
-	path = libraries/fmt
-	url = https://github.com/fmtlib/fmt
+[submodule "vcpkg"]
+	path = vcpkg
+	url = https://github.com/Microsoft/vcpkg.git

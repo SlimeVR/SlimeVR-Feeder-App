@@ -1,5 +1,7 @@
 #include "matrix_utils.h"
 
+#include <cmath>
+
 using namespace vr;
 
 HmdQuaternion_t GetRotation(HmdMatrix34_t matrix) {
