@@ -22,7 +22,8 @@ static constexpr char* actions_path = "./bindings/actions.json";
 static constexpr char* pipe_name = "\\\\.\\pipe\\SlimeVRInput";
 
 // Consider Standing universe
-static constexpr ETrackingUniverseOrigin tracking_origin = ETrackingUniverseOrigin::TrackingUniverseRawAndUncalibrated;
+//static constexpr ETrackingUniverseOrigin tracking_origin = ETrackingUniverseOrigin::TrackingUniverseRawAndUncalibrated;
+static constexpr ETrackingUniverseOrigin tracking_origin = ETrackingUniverseOrigin::TrackingUniverseStanding;
 
 enum BodyPosition {
 	Head = 0,
@@ -102,7 +103,8 @@ public:
 
 	void SendStatus(Status status, bool should_flush = true) {
 		fmt::print(trackers_pipe, "STA {} {}\n", index, status);
-		fmt::print("Device (Index {}) status: {}\n", index, statusNames[status]);
+		fmt::print("STA {} {}\n", index, status);
+		fmt::print("Device (Index {}) status: {} ({})\n", index, statusNames[status], status);
 		if (should_flush) {
 			trackers_pipe.flush();
 		}
@@ -221,6 +223,7 @@ struct OpenVRStuff {
 
 		std::string prop_value = std::string(size, '\0');
 		system->GetStringTrackedDeviceProperty(index, prop, prop_value.data(), size, &prop_error);
+		prop_value.resize(size-1);
 
 		if (prop_error != TrackedProp_Success) {
 			fmt::print("Error: data getting IVRSystem::GetStringTrackedDeviceProperty({}): {}\n", prop, prop_error);
@@ -296,12 +299,16 @@ struct OpenVRStuff {
 
 					auto get_name = [&, this]() {
 						auto controller_type = this->GetStringProp(trackedDeviceIndex.value(), ETrackedDeviceProperty::Prop_ControllerType_String);
-						if (!controller_type.has_value()) {
+						auto serial = this->GetStringProp(trackedDeviceIndex.value(), ETrackedDeviceProperty::Prop_SerialNumber_String);
+						if (controller_type.has_value() && serial.has_value()) {
+							return fmt::format("{} ({})", controller_type.value(), serial.value());
+						} else if (serial.has_value()) {
+							return serial.value();
+						} else if (controller_type.has_value()) {
+							return fmt::format("{} (Index {})", controller_type.value(), trackedDeviceIndex.value());
+						} else {
 							// uhhhhhhhhhhhhhhh
 							return fmt::format("Index{}", trackedDeviceIndex.value());
-						}
-						else {
-							return controller_type.value();
 						}
 					};
 
