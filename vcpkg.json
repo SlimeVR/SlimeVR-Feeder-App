@@ -3,6 +3,7 @@
     "version-string": "0.1.4",
     "dependencies": [
         "fmt",
-        "openvr"
+        "openvr",
+        "protobuf"
     ]
 }

@@ -7,12 +7,15 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 find_package(fmt CONFIG REQUIRED)
 find_library(OPENVR_LIB openvr_api)
+find_package(Protobuf CONFIG REQUIRED)
 
-message("ovr: ${OPENVR_LIB}")
+set(protos_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/protos)
 
 # Project
-add_executable("${PROJECT_NAME}" "src/main.cpp" "src/pathtools_excerpt.cpp" "src/pathtools_excerpt.h" "src/matrix_utils.cpp" "src/matrix_utils.h")
-target_link_libraries("${PROJECT_NAME}" PRIVATE "${OPENVR_LIB}" fmt::fmt)
+add_executable("${PROJECT_NAME}" "src/main.cpp" "src/pathtools_excerpt.cpp" "src/pathtools_excerpt.h" "src/matrix_utils.cpp" "src/matrix_utils.h" "src/bridge.cpp" "src/bridge.hpp" "ProtobufMessages.proto")
+target_link_libraries("${PROJECT_NAME}" PRIVATE "${OPENVR_LIB}" fmt::fmt protobuf::libprotobuf)
+protobuf_generate(TARGET "${PROJECT_NAME}" LANGUAGE cpp PROTOC_OUT_DIR ${protos_OUTPUT_DIR})
+target_include_directories("${PROJECT_NAME}" PUBLIC ${protos_OUTPUT_DIR})
 target_compile_features("${PROJECT_NAME}" PRIVATE cxx_std_17)
 
 # IDE Config

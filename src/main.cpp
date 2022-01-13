@@ -14,6 +14,8 @@
 
 #include "pathtools_excerpt.h"
 #include "matrix_utils.h"
+#include "bridge.hpp"
+#include <ProtobufMessages.pb.h>
 
 using namespace vr;
 
@@ -75,57 +77,42 @@ static constexpr char* actions[BodyPosition::BodyPosition_Count] = {
 };
 
 class Tracker {
-	std::ofstream &trackers_pipe;
+	SlimeVRBridge &bridge;
 	HmdQuaternion_t current_rotation = { 0 };
 	HmdVector3_t current_position = { 0 };
 	TrackedDeviceIndex_t index = k_unTrackedDeviceIndexInvalid;
 
 	bool current_valid = false;
-
-	enum Status {
-		Disconnected = 0,
-		Ok = 1,
-		Busy = 2,
-		Error = 3,
-		Occluded = 4
-	};
-
-	static constexpr char *statusNames[5] = {
-		"Disconnected",
-		"Ok",
-		"Busy",
-		"Error",
-		"Occluded"
-	};
-
 public:
-	Tracker(std::ofstream &pipe): trackers_pipe(pipe) {}
+	Tracker(SlimeVRBridge &bridge): bridge(bridge) {}
 
-	void SendStatus(Status status, bool should_flush = true) {
-		fmt::print(trackers_pipe, "STA {} {}\n", index, status);
-		fmt::print("STA {} {}\n", index, status);
-		fmt::print("Device (Index {}) status: {} ({})\n", index, statusNames[status], status);
-		if (should_flush) {
-			trackers_pipe.flush();
-		}
-		if (trackers_pipe.fail()) {
-			fmt::print("Warning: failed to write/flush to pipe\n");
-		}
+	void SendStatus(messages::TrackerStatus_Status status_val) {
+		messages::TrackerStatus status;
+
+		status.set_status(status_val);
+		status.set_tracker_id(index);
+
+		messages::ProtobufMessage message;
+		message.set_allocated_tracker_status(&status);
+		bridge.sendMessage(message);
+		message.release_tracker_status();
+
+		fmt::print("Device (Index {}) status: {} ({})\n", index, messages::TrackerStatus_Status_Name(status_val), status_val);
 	}
 
-	void Update(TrackedDevicePose_t pose) {
+	void Update(TrackedDevicePose_t pose, bool just_connected) {
 		if (pose.bPoseIsValid) {
 			if (!current_valid) {
 				current_valid = true;
-				// we're going to flush momentarily when we send the position update.
-				SendStatus(Ok, false);
+				SendStatus(messages::TrackerStatus_Status_OK);
 			}
 
 			HmdQuaternion_t new_rotation = GetRotation(pose.mDeviceToAbsoluteTracking);
 			HmdVector3_t new_position = GetPosition(pose.mDeviceToAbsoluteTracking);
 
-			// only update if there's a difference
+			// only update if there's a difference, or if we just connected
 			if (
+				just_connected ||
 				current_rotation.w != new_rotation.w || current_rotation.x != new_rotation.x ||
 				current_rotation.y != new_rotation.y || current_rotation.z != new_rotation.z ||
 				current_position.v[0] != new_position.v[0] || current_position.v[1] != new_position.v[1] ||
@@ -133,61 +120,86 @@ public:
 			) {
 				current_position = new_position;
 				current_rotation = new_rotation;
-				// send our UPD message
-				fmt::print(
-					trackers_pipe, "UPD {:d} {:f} {:f} {:f} {:f} {:f} {:f} {:f}\n",
-					index,
-					current_position.v[0], current_position.v[1], current_position.v[2],
-					current_rotation.w, current_rotation.x, current_rotation.y, current_rotation.z
+
+				// send our position message
+				messages::Position position;
+				position.set_x(current_position.v[0]);
+				position.set_y(current_position.v[1]);
+				position.set_z(current_position.v[2]);
+				position.set_qw(current_rotation.w);
+				position.set_qx(current_rotation.x);
+				position.set_qy(current_rotation.y);
+				position.set_qz(current_rotation.z);
+				position.set_tracker_id(index);
+				position.set_data_source(
+					pose.eTrackingResult == ETrackingResult::TrackingResult_Fallback_RotationOnly
+					? messages::Position_DataSource_IMU
+					: messages::Position_DataSource_FULL
 				);
-				trackers_pipe.flush();
+
+				messages::ProtobufMessage message;
+				message.set_allocated_position(&position);
+
+				bridge.sendMessage(message);
+				// position is stack allocated, don't let protobuf try to free it.
+				message.release_position();
 			}
-		} else if (current_valid) {
+		}
+		
+		// send status update on change, or if we just connected.
+		if (current_valid && !pose.bPoseIsValid || just_connected) {
 			current_valid = false;
 			current_position = {0};
 			current_rotation = {0};
 			if (!pose.bDeviceIsConnected) {
-				SendStatus(Disconnected);
+				SendStatus(messages::TrackerStatus_Status_DISCONNECTED);
 			} else if (pose.eTrackingResult == ETrackingResult::TrackingResult_Running_OutOfRange) {
-				SendStatus(Occluded);
+				SendStatus(messages::TrackerStatus_Status_OCCLUDED);
 			} else {
-				SendStatus(Error);
+				SendStatus(messages::TrackerStatus_Status_ERROR);
 			}
 		}
 	}
 
-	template <typename F>
-	void SetIndex(TrackedDeviceIndex_t idx, BodyPosition pos, F &&get_name) {
+	template <typename N, typename S>
+	void SetIndex(TrackedDeviceIndex_t idx, BodyPosition pos, N &&get_name, S &&get_serial, bool send_anyway) {
 		if (index != k_unTrackedDeviceIndexInvalid) {
 			fmt::print("Warning: Tracked Device Index changed from {} to {}. Report this, because assumptions were incorrectly made.", index, idx);
 		}
 
-		if (index != idx) {
+		if (index != idx || send_anyway) {
 			index = idx;
 
 			auto name = get_name();
+			std::optional<std::string> serial = get_serial();
 
-			fmt::print(trackers_pipe, "ADD {} {} {}\n", index, pos, name);
+			messages::TrackerAdded added;
+			added.set_tracker_id(index);
+			added.set_tracker_role(pos);
+			added.set_tracker_name(name);
+			if (serial.has_value()) {
+				added.set_tracker_serial(serial.value());
+			}
+
+			messages::ProtobufMessage message;
+			message.set_allocated_tracker_added(&added);
+			bridge.sendMessage(message);
+			message.release_tracker_added();
+
 			// log it.
 			fmt::print("Found device \"{}\" at {} with index {}\n", name, positionNames[pos], index);
-			// not flushing because we are totally going to be sending position data soon which we will flush
-			// except maybe there were issues related to this so *let's flush it*
-			trackers_pipe.flush();
-			if (trackers_pipe.fail()) {
-				fmt::print("Warning: failed to write/flush to pipe\n");
-			}
 		}
 	}
 };
 
 struct OpenVRStuff {
 	// note: still windows only, i just wanted to be able to format
-	std::ofstream &trackers_pipe;
+	SlimeVRBridge &bridge;
 
-	OpenVRStuff(std::ofstream &pipe): trackers_pipe(pipe), trackers {
+	OpenVRStuff(SlimeVRBridge &bridge): bridge(bridge), trackers {
 		// UGH
-		Tracker(pipe), Tracker(pipe), Tracker(pipe), Tracker(pipe), Tracker(pipe), Tracker(pipe), Tracker(pipe),
-		Tracker(pipe), Tracker(pipe), Tracker(pipe), Tracker(pipe), Tracker(pipe), Tracker(pipe)
+		Tracker(bridge), Tracker(bridge), Tracker(bridge), Tracker(bridge), Tracker(bridge), Tracker(bridge), Tracker(bridge),
+		Tracker(bridge), Tracker(bridge), Tracker(bridge), Tracker(bridge), Tracker(bridge), Tracker(bridge)
 	} {}
 
 	IVRSystem* system = nullptr;
@@ -244,7 +256,7 @@ struct OpenVRStuff {
 		return std::make_optional(info.trackedDeviceIndex);
 	}
 
-	void Tick() {
+	void Tick(bool just_connected) {
 		TrackedDevicePose_t device_poses[k_unMaxTrackedDeviceCount];
 
 		system->GetDeviceToAbsoluteTrackingPose(tracking_origin, 0, device_poses, k_unMaxTrackedDeviceCount);
@@ -269,11 +281,11 @@ struct OpenVRStuff {
 
 			TrackedDevicePose_t &pose = device_poses[trackedDeviceIndex.value()];
 
-			trackers[jjj].Update(pose);
+			trackers[jjj].Update(pose, just_connected);
 		}
 	}
 
-	void UpdateValueHandles(VRActionHandle_t(&actions)[BodyPosition::BodyPosition_Count]) {
+	void UpdateValueHandles(VRActionHandle_t(&actions)[BodyPosition::BodyPosition_Count], bool just_connected) {
 		EVRInputError input_error = input->UpdateActionState(&actionSet, sizeof(actionSet), 1);
 		if (input_error != EVRInputError::VRInputError_None) {
 			fmt::print("Error: IVRInput::UpdateActionState: {}\n", input_error);
@@ -299,20 +311,20 @@ struct OpenVRStuff {
 
 					auto get_name = [&, this]() {
 						auto controller_type = this->GetStringProp(trackedDeviceIndex.value(), ETrackedDeviceProperty::Prop_ControllerType_String);
-						auto serial = this->GetStringProp(trackedDeviceIndex.value(), ETrackedDeviceProperty::Prop_SerialNumber_String);
-						if (controller_type.has_value() && serial.has_value()) {
-							return fmt::format("{} ({})", controller_type.value(), serial.value());
-						} else if (serial.has_value()) {
-							return serial.value();
-						} else if (controller_type.has_value()) {
-							return fmt::format("{} (Index {})", controller_type.value(), trackedDeviceIndex.value());
+						
+						if (controller_type.has_value()) {
+							return controller_type.value();
 						} else {
 							// uhhhhhhhhhhhhhhh
 							return fmt::format("Index{}", trackedDeviceIndex.value());
 						}
 					};
 
-					trackers[jjj].SetIndex(trackedDeviceIndex.value(), (BodyPosition)jjj, get_name);
+					auto get_serial = [&, this]() {
+						return this->GetStringProp(trackedDeviceIndex.value(), ETrackedDeviceProperty::Prop_SerialNumber_String);
+					};
+
+					trackers[jjj].SetIndex(trackedDeviceIndex.value(), (BodyPosition)jjj, get_name, get_serial, just_connected);
 				}
 			}
 		}
@@ -336,18 +348,14 @@ void shutdown_vr(IVRSystem* _system) {
 }
 
 int main(int argc, char* argv[]) {
+	GOOGLE_PROTOBUF_VERIFY_VERSION;
+
 	EVRInitError init_error = VRInitError_None;
 	EVRInputError input_error = VRInputError_None;
 
 	signal(SIGINT, handle_signal);
-
-	auto pipe = std::ofstream(pipe_name, std::ios_base::binary | std::ios_base::ate);
-	OpenVRStuff stuff(pipe);
-
-	if (stuff.trackers_pipe.fail()) {
-		std::cout << "Error opening pipe. Continuing..." << std::endl;
-		// TODO: attempt to re-open pipe periodically, to support server coming up after application?
-	}
+	auto bridge = SlimeVRBridge::factory();
+	OpenVRStuff stuff(*bridge);
 
 	// maybe prefer Background?
 	std::unique_ptr<IVRSystem, decltype(&shutdown_vr)> system(VR_Init(&init_error, VRApplication_Overlay), &shutdown_vr);
@@ -394,10 +402,12 @@ int main(int argc, char* argv[]) {
 		0
 	};
 
-	stuff.UpdateValueHandles(action_handles);
+	stuff.UpdateValueHandles(action_handles, false);
 
 	// event loop
 	while (!should_exit) {
+		bool just_connected = bridge->runFrame();
+
 		VREvent_t event;
 		if (system->PollNextEvent(&event, sizeof(event))) {
 			switch (event.eventType) {
@@ -410,7 +420,7 @@ int main(int argc, char* argv[]) {
 			case VREvent_TrackedDeviceRoleChanged:
 			case VREvent_TrackedDeviceUpdated:
 			case VREvent_DashboardDeactivated:
-				// stuff.UpdateValueHandles(action_handles);
+				// stuff.UpdateValueHandles(action_handles, just_connected);
 				break;
 
 			default:
@@ -421,9 +431,9 @@ int main(int argc, char* argv[]) {
 		}
 
 		// TODO: don't do this every loop, we really shouldn't need to.
-		stuff.UpdateValueHandles(action_handles);
+		stuff.UpdateValueHandles(action_handles, just_connected);
 
-		stuff.Tick();
+		stuff.Tick(just_connected);
 
 		// run as fast as possible (for now), but make sure that we give time back to the OS.
 		std::this_thread::yield();
