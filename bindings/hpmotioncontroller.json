@@ -3,6 +3,9 @@
   "controller_type": "hpmotioncontroller",
   "bindings": {
     "/actions/main": {
+      "sources": [],
+      "skeleton": [],
+      "haptics": [],
       "poses": [
         {
           "output": "/actions/main/in/left_hand",

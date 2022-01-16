@@ -3,6 +3,9 @@
   "controller_type": "vive_tracker_left_foot",
   "bindings": {
     "/actions/main": {
+      "sources": [],
+      "skeleton": [],
+      "haptics": [],
       "poses": [
         {
           "output": "/actions/main/in/left_foot",

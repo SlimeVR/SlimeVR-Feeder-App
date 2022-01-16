@@ -3,6 +3,9 @@
   "controller_type": "generic_hmd",
   "bindings": {
     "/actions/main": {
+      "sources": [],
+      "skeleton": [],
+      "haptics": [],
       "poses": [
         {
           "output": "/actions/main/in/head",

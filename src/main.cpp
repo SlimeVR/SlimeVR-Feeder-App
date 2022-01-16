@@ -87,15 +87,13 @@ public:
 	Tracker(SlimeVRBridge &bridge): bridge(bridge) {}
 
 	void SendStatus(messages::TrackerStatus_Status status_val) {
-		messages::TrackerStatus status;
-
-		status.set_status(status_val);
-		status.set_tracker_id(index);
-
 		messages::ProtobufMessage message;
-		message.set_allocated_tracker_status(&status);
+		messages::TrackerStatus *status = message.mutable_tracker_status();
+
+		status->set_status(status_val);
+		status->set_tracker_id(index);
+
 		bridge.sendMessage(message);
-		message.release_tracker_status();
 
 		fmt::print("Device (Index {}) status: {} ({})\n", index, messages::TrackerStatus_Status_Name(status_val), status_val);
 	}
@@ -122,27 +120,23 @@ public:
 				current_rotation = new_rotation;
 
 				// send our position message
-				messages::Position position;
-				position.set_x(current_position.v[0]);
-				position.set_y(current_position.v[1]);
-				position.set_z(current_position.v[2]);
-				position.set_qw(current_rotation.w);
-				position.set_qx(current_rotation.x);
-				position.set_qy(current_rotation.y);
-				position.set_qz(current_rotation.z);
-				position.set_tracker_id(index);
-				position.set_data_source(
+				messages::ProtobufMessage message;
+				messages::Position *position = message.mutable_position();
+				position->set_x(current_position.v[0]);
+				position->set_y(current_position.v[1]);
+				position->set_z(current_position.v[2]);
+				position->set_qw(current_rotation.w);
+				position->set_qx(current_rotation.x);
+				position->set_qy(current_rotation.y);
+				position->set_qz(current_rotation.z);
+				position->set_tracker_id(index);
+				position->set_data_source(
 					pose.eTrackingResult == ETrackingResult::TrackingResult_Fallback_RotationOnly
 					? messages::Position_DataSource_IMU
 					: messages::Position_DataSource_FULL
 				);
 
-				messages::ProtobufMessage message;
-				message.set_allocated_position(&position);
-
 				bridge.sendMessage(message);
-				// position is stack allocated, don't let protobuf try to free it.
-				message.release_position();
 			}
 		}
 		
@@ -173,18 +167,16 @@ public:
 			auto name = get_name();
 			std::optional<std::string> serial = get_serial();
 
-			messages::TrackerAdded added;
-			added.set_tracker_id(index);
-			added.set_tracker_role(pos);
-			added.set_tracker_name(name);
+			messages::ProtobufMessage message;
+			messages::TrackerAdded *added = message.mutable_tracker_added();
+			added->set_tracker_id(index);
+			added->set_tracker_role(pos);
+			added->set_tracker_name(name);
 			if (serial.has_value()) {
-				added.set_tracker_serial(serial.value());
+				added->set_tracker_serial(serial.value());
 			}
 
-			messages::ProtobufMessage message;
-			message.set_allocated_tracker_added(&added);
 			bridge.sendMessage(message);
-			message.release_tracker_added();
 
 			// log it.
 			fmt::print("Found device \"{}\" at {} with index {}\n", name, positionNames[pos], index);
@@ -286,7 +278,7 @@ struct OpenVRStuff {
 	}
 
 	void UpdateValueHandles(VRActionHandle_t(&actions)[BodyPosition::BodyPosition_Count], bool just_connected) {
-		EVRInputError input_error = input->UpdateActionState(&actionSet, sizeof(actionSet), 1);
+		EVRInputError input_error = input->UpdateActionState(&actionSet, sizeof(VRActiveActionSet_t), 1);
 		if (input_error != EVRInputError::VRInputError_None) {
 			fmt::print("Error: IVRInput::UpdateActionState: {}\n", input_error);
 			return;
@@ -388,6 +380,8 @@ int main(int argc, char* argv[]) {
 		action_handles[iii] = stuff.GetAction(actions[iii]);
 	}
 
+	VRActionHandle_t calibration_action = stuff.GetAction("/actions/main/in/request_calibration");
+
 	VRActionSetHandle_t action_set_handle;
 	if ((input_error = stuff.input->GetActionSetHandle("/actions/main", &action_set_handle)) != EVRInputError::VRInputError_None) {
 		fmt::print("Error: VRInput::GetActionSetHandle: {}\n", input_error);
@@ -430,8 +424,32 @@ int main(int argc, char* argv[]) {
 			}
 		}
 
+		messages::ProtobufMessage recievedMessage;
+		// TODO: I don't think there are any messages from the server that we care about at the moment, but let's make sure to not let the pipe fill up.
+		bridge->getNextMessage(recievedMessage);
+
 		// TODO: don't do this every loop, we really shouldn't need to.
 		stuff.UpdateValueHandles(action_handles, just_connected);
+
+		InputDigitalActionData_t calibration_data;
+		input_error = stuff.input->GetDigitalActionData(calibration_action, &calibration_data, sizeof(InputDigitalActionData_t), 0);
+		if (input_error == EVRInputError::VRInputError_None) {
+			constexpr bool falling_edge = false; // rising edge for now, making it easy to switch for now just in case.
+			if (calibration_data.bChanged && (calibration_data.bState ^ falling_edge)) {
+				fmt::print("User requested calibration!\n");
+				messages::ProtobufMessage message;
+				messages::UserAction *userAction = message.mutable_user_action();
+				userAction->set_name("Request Calibration"); // TODO: what specific name should be used?
+				// TODO: does the server actually care or is able to make use of this information?
+				// should i encode it as a binary value encoded to string instead? (i.e. reinterpret float as int, then pass 0x{})
+				userAction->mutable_action_arguments()->insert({ "fUpdateTime", fmt::format("{}", calibration_data.fUpdateTime) });
+
+				bridge->sendMessage(message);
+			}
+		} else {
+			fmt::print("Error: VRInput::GetDigitalActionData: {}\n", input_error);
+		}
+		
 
 		stuff.Tick(just_connected);
 
