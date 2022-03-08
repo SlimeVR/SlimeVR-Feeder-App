@@ -139,6 +139,11 @@
       "name": "/actions/main/in/request_calibration",
       "type": "boolean",
       "requirement": "suggested"
+    },
+    {
+      "name": "/actions/main/in/confirm",
+      "type": "boolean",
+      "requirement": "suggested"
     }
   ],
   "action_sets": [

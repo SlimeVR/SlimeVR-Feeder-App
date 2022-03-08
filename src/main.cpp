@@ -27,7 +27,7 @@ static constexpr char* pipe_name = "\\\\.\\pipe\\SlimeVRInput";
 //static constexpr ETrackingUniverseOrigin tracking_origin = ETrackingUniverseOrigin::TrackingUniverseRawAndUncalibrated;
 static constexpr ETrackingUniverseOrigin tracking_origin = ETrackingUniverseOrigin::TrackingUniverseStanding;
 
-enum BodyPosition {
+enum class BodyPosition {
 	Head = 0,
 	LeftHand,
 	RightHand,
@@ -44,7 +44,49 @@ enum BodyPosition {
 	BodyPosition_Count
 };
 
-static constexpr char* positionNames[BodyPosition::BodyPosition_Count] = {
+// TODO: keep track of things as SlimeVRPosition in the first place.
+enum class SlimeVRPosition {
+	None = 0,
+	Waist,
+	LeftFoot,
+	RightFoot,
+	Chest,
+	LeftKnee,
+	RightKnee,
+	LeftElbow,
+	RightElbow,
+	LeftShoulder,
+	RightShoulder,
+	LeftHand,
+	RightHand,
+	LeftController,
+	RightController,
+	Head,
+	Neck,
+	Camera,
+	Keyboard,
+	HMD,
+	Beacon,
+	GenericController
+};
+
+static constexpr SlimeVRPosition positionIDs[(int)BodyPosition::BodyPosition_Count] = {
+	SlimeVRPosition::Head,
+	SlimeVRPosition::LeftHand,
+	SlimeVRPosition::RightHand,
+	SlimeVRPosition::LeftFoot,
+	SlimeVRPosition::RightFoot,
+	SlimeVRPosition::LeftShoulder,
+	SlimeVRPosition::RightShoulder,
+	SlimeVRPosition::LeftElbow,
+	SlimeVRPosition::RightElbow,
+	SlimeVRPosition::LeftKnee,
+	SlimeVRPosition::RightKnee,
+	SlimeVRPosition::Waist,
+	SlimeVRPosition::Chest
+};
+
+static constexpr char* positionNames[(int)BodyPosition::BodyPosition_Count] = {
 	"Head",
 	"LeftHand",
 	"RightHand",
@@ -60,7 +102,7 @@ static constexpr char* positionNames[BodyPosition::BodyPosition_Count] = {
 	"Chest"
 };
 
-static constexpr char* actions[BodyPosition::BodyPosition_Count] = {
+static constexpr char* actions[(int)BodyPosition::BodyPosition_Count] = {
 	"/actions/main/in/head",
 	"/actions/main/in/left_hand",
 	"/actions/main/in/right_hand",
@@ -170,7 +212,7 @@ public:
 			messages::ProtobufMessage message;
 			messages::TrackerAdded *added = message.mutable_tracker_added();
 			added->set_tracker_id(index);
-			added->set_tracker_role(pos);
+			added->set_tracker_role((int)positionIDs[(int)pos]);
 			added->set_tracker_name(name);
 			if (serial.has_value()) {
 				added->set_tracker_serial(serial.value());
@@ -179,7 +221,7 @@ public:
 			bridge.sendMessage(message);
 
 			// log it.
-			fmt::print("Found device \"{}\" at {} with index {}\n", name, positionNames[pos], index);
+			fmt::print("Found device \"{}\" at {} ({}) with index {}\n", name, positionNames[(int)pos], (int)positionIDs[(int)pos] , index);
 		}
 	}
 };
@@ -199,8 +241,8 @@ struct OpenVRStuff {
 
 	VRActiveActionSet_t actionSet = { 0 };
 
-	VRInputValueHandle_t value_handles[BodyPosition::BodyPosition_Count] = { k_ulInvalidInputValueHandle };
-	Tracker trackers[BodyPosition::BodyPosition_Count];
+	VRInputValueHandle_t value_handles[(int)BodyPosition::BodyPosition_Count] = { k_ulInvalidInputValueHandle };
+	Tracker trackers[(int)BodyPosition::BodyPosition_Count];
 
 	VRActionHandle_t GetAction(const char* action_path) {
 		VRActionHandle_t handle = k_ulInvalidInputValueHandle;
@@ -252,7 +294,7 @@ struct OpenVRStuff {
 		TrackedDevicePose_t device_poses[k_unMaxTrackedDeviceCount];
 
 		system->GetDeviceToAbsoluteTrackingPose(tracking_origin, 0, device_poses, k_unMaxTrackedDeviceCount);
-		for (unsigned int jjj = 0; jjj < BodyPosition::BodyPosition_Count; ++jjj) {
+		for (unsigned int jjj = 0; jjj < (int)BodyPosition::BodyPosition_Count; ++jjj) {
 			VRInputValueHandle_t activeOrigin = value_handles[jjj];
 			if (activeOrigin == k_ulInvalidInputValueHandle) {
 				continue;
@@ -277,14 +319,14 @@ struct OpenVRStuff {
 		}
 	}
 
-	void UpdateValueHandles(VRActionHandle_t(&actions)[BodyPosition::BodyPosition_Count], bool just_connected) {
+	void UpdateValueHandles(VRActionHandle_t(&actions)[(int)BodyPosition::BodyPosition_Count], bool just_connected) {
 		EVRInputError input_error = input->UpdateActionState(&actionSet, sizeof(VRActiveActionSet_t), 1);
 		if (input_error != EVRInputError::VRInputError_None) {
 			fmt::print("Error: IVRInput::UpdateActionState: {}\n", input_error);
 			return;
 		}
 
-		for (unsigned int jjj = 0; jjj < BodyPosition::BodyPosition_Count; ++jjj) {
+		for (unsigned int jjj = 0; jjj < (int)BodyPosition::BodyPosition_Count; ++jjj) {
 			InputPoseActionData_t pose;
 			input_error = input->GetPoseActionDataRelativeToNow(actions[jjj], tracking_origin, 0, &pose, sizeof(pose), 0);
 			if (input_error != EVRInputError::VRInputError_None) {
@@ -298,6 +340,12 @@ struct OpenVRStuff {
 					std::optional<TrackedDeviceIndex_t> trackedDeviceIndex = GetIndex(pose.activeOrigin);
 					if (!trackedDeviceIndex.has_value()) {
 						// already printed a message about this in GetIndex, just continue.
+						continue;
+					}
+
+					auto driver = this->GetStringProp(trackedDeviceIndex.value(), ETrackedDeviceProperty::Prop_TrackingSystemName_String);
+					if (driver == "SlimeVR") {
+						// we ignore SlimeVR trackers, because that's where we're reporting to!
 						continue;
 					}
 
@@ -319,6 +367,30 @@ struct OpenVRStuff {
 					trackers[jjj].SetIndex(trackedDeviceIndex.value(), (BodyPosition)jjj, get_name, get_serial, just_connected);
 				}
 			}
+		}
+	}
+
+	std::optional<InputDigitalActionData_t> HandleDigitalActionBool(VRActionHandle_t action_handle, std::optional<const char *> server_name = std::nullopt) {
+		InputDigitalActionData_t action_data;
+		EVRInputError input_error = VRInputError_None;
+
+		input_error = input->GetDigitalActionData(action_handle, &action_data, sizeof(InputDigitalActionData_t), 0);
+		if (input_error == EVRInputError::VRInputError_None) {
+			constexpr bool falling_edge = false; // rising edge for now, making it easy to switch for now just in case.
+			if (action_data.bChanged && (action_data.bState ^ falling_edge) && server_name.has_value()) {
+				messages::ProtobufMessage message;
+				messages::UserAction *userAction = message.mutable_user_action();
+				userAction->set_name(server_name.value());
+
+				fmt::print("Sending {} action\n", server_name.value());
+
+				bridge.sendMessage(message);
+			}
+
+			return action_data;
+		} else {
+			fmt::print("Error: VRInput::GetDigitalActionData: {}\n", input_error);
+			return {};
 		}
 	}
 };
@@ -375,12 +447,13 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
-	VRActionHandle_t action_handles[BodyPosition::BodyPosition_Count];
-	for (unsigned int iii = 0; iii < BodyPosition::BodyPosition_Count; ++iii) {
+	VRActionHandle_t action_handles[(int)BodyPosition::BodyPosition_Count];
+	for (unsigned int iii = 0; iii < (int)BodyPosition::BodyPosition_Count; ++iii) {
 		action_handles[iii] = stuff.GetAction(actions[iii]);
 	}
 
 	VRActionHandle_t calibration_action = stuff.GetAction("/actions/main/in/request_calibration");
+	VRActionHandle_t confirm_action = stuff.GetAction("/actions/main/in/confirm");
 
 	VRActionSetHandle_t action_set_handle;
 	if ((input_error = stuff.input->GetActionSetHandle("/actions/main", &action_set_handle)) != EVRInputError::VRInputError_None) {
@@ -431,25 +504,9 @@ int main(int argc, char* argv[]) {
 		// TODO: don't do this every loop, we really shouldn't need to.
 		stuff.UpdateValueHandles(action_handles, just_connected);
 
-		InputDigitalActionData_t calibration_data;
-		input_error = stuff.input->GetDigitalActionData(calibration_action, &calibration_data, sizeof(InputDigitalActionData_t), 0);
-		if (input_error == EVRInputError::VRInputError_None) {
-			constexpr bool falling_edge = false; // rising edge for now, making it easy to switch for now just in case.
-			if (calibration_data.bChanged && (calibration_data.bState ^ falling_edge)) {
-				fmt::print("User requested calibration!\n");
-				messages::ProtobufMessage message;
-				messages::UserAction *userAction = message.mutable_user_action();
-				userAction->set_name("Request Calibration"); // TODO: what specific name should be used?
-				// TODO: does the server actually care or is able to make use of this information?
-				// should i encode it as a binary value encoded to string instead? (i.e. reinterpret float as int, then pass 0x{})
-				userAction->mutable_action_arguments()->insert({ "fUpdateTime", fmt::format("{}", calibration_data.fUpdateTime) });
-
-				bridge->sendMessage(message);
-			}
-		} else {
-			fmt::print("Error: VRInput::GetDigitalActionData: {}\n", input_error);
-		}
-		
+		// TODO: rename these actions as appropriate, perhaps log them?
+		stuff.HandleDigitalActionBool(calibration_action, { "Request Calibration" });
+		stuff.HandleDigitalActionBool(confirm_action, { "Confirm" });
 
 		stuff.Tick(just_connected);
 

@@ -99,6 +99,11 @@ bool SlimeVRBridge::runFrame() {
         case BRIDGE_CONNECTED:
             update();
             return false;
+        default:
+            // uhhh, what?
+            reset();
+            status = BRIDGE_DISCONNECTED;
+            return false;
     }
 }
 
