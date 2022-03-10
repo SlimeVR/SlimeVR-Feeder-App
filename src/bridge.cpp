@@ -16,7 +16,7 @@ class NamedPipeBridge final: public SlimeVRBridge {
 
         void pipe_error() {
             status = BRIDGE_ERROR;
-            fmt::print("Bridge error: 0x{:x}", GetLastError());
+            fmt::print("Bridge error: 0x{:x}\n", GetLastError());
         }
     public:
         bool getNextMessage(messages::ProtobufMessage &msg) final override {
@@ -72,7 +72,7 @@ class NamedPipeBridge final: public SlimeVRBridge {
             pipe = CreateFileA(pipe_name, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
             if (pipe != INVALID_HANDLE_VALUE) {
                 status = BRIDGE_CONNECTED;
-                fmt::print("Pipe was connected!");
+                fmt::print("Pipe was connected!\n");
             }
         }
         virtual void reset() final override {
@@ -80,7 +80,7 @@ class NamedPipeBridge final: public SlimeVRBridge {
                 CloseHandle(pipe);
                 pipe = INVALID_HANDLE_VALUE;
                 status = BRIDGE_DISCONNECTED;
-                fmt::print("Pipe was reset.");
+                fmt::print("Pipe was reset.\n");
             }
         }
         virtual void update() final override {}

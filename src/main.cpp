@@ -71,7 +71,7 @@ enum class SlimeVRPosition {
 };
 
 static constexpr SlimeVRPosition positionIDs[(int)BodyPosition::BodyPosition_Count] = {
-	SlimeVRPosition::HMD,
+	SlimeVRPosition::Head,
 	SlimeVRPosition::LeftController,
 	SlimeVRPosition::RightController,
 	SlimeVRPosition::LeftFoot,
@@ -335,7 +335,7 @@ struct OpenVRStuff {
 			}
 
 			if (pose.bActive) {
-				if (value_handles[jjj] != pose.activeOrigin) {
+				if (value_handles[jjj] != pose.activeOrigin || just_connected) {
 					value_handles[jjj] = pose.activeOrigin;
 					std::optional<TrackedDeviceIndex_t> trackedDeviceIndex = GetIndex(pose.activeOrigin);
 					if (!trackedDeviceIndex.has_value()) {
