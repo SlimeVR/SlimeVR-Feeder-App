@@ -24,8 +24,8 @@ static constexpr char* actions_path = "./bindings/actions.json";
 static constexpr char* pipe_name = "\\\\.\\pipe\\SlimeVRInput";
 
 // Consider Standing universe
-//static constexpr ETrackingUniverseOrigin tracking_origin = ETrackingUniverseOrigin::TrackingUniverseRawAndUncalibrated;
-static constexpr ETrackingUniverseOrigin tracking_origin = ETrackingUniverseOrigin::TrackingUniverseStanding;
+static constexpr ETrackingUniverseOrigin tracking_origin = ETrackingUniverseOrigin::TrackingUniverseRawAndUncalibrated;
+//static constexpr ETrackingUniverseOrigin tracking_origin = ETrackingUniverseOrigin::TrackingUniverseStanding;
 
 enum class BodyPosition {
 	Head = 0,
