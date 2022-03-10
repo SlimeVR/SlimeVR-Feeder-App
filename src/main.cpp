@@ -71,9 +71,9 @@ enum class SlimeVRPosition {
 };
 
 static constexpr SlimeVRPosition positionIDs[(int)BodyPosition::BodyPosition_Count] = {
-	SlimeVRPosition::Head,
-	SlimeVRPosition::LeftHand,
-	SlimeVRPosition::RightHand,
+	SlimeVRPosition::HMD,
+	SlimeVRPosition::LeftController,
+	SlimeVRPosition::RightController,
 	SlimeVRPosition::LeftFoot,
 	SlimeVRPosition::RightFoot,
 	SlimeVRPosition::LeftShoulder,
@@ -505,7 +505,7 @@ int main(int argc, char* argv[]) {
 		stuff.UpdateValueHandles(action_handles, just_connected);
 
 		// TODO: rename these actions as appropriate, perhaps log them?
-		stuff.HandleDigitalActionBool(calibration_action, { "Request Calibration" });
+		stuff.HandleDigitalActionBool(calibration_action, { "calibrate" });
 		stuff.HandleDigitalActionBool(confirm_action, { "Confirm" });
 
 		stuff.Tick(just_connected);
