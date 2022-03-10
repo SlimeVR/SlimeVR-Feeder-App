@@ -17,6 +17,7 @@
 #include "matrix_utils.h"
 #include "bridge.hpp"
 #include "setup.hpp"
+#include "version.h"
 #include <ProtobufMessages.pb.h>
 
 using namespace vr;
@@ -444,6 +445,8 @@ int main(int argc, char* argv[]) {
 	if (install || uninstall) {
 		return handle_setup(install);
 	}
+
+	fmt::print("SlimeVR-Feeder-App version {}\n\n", version);
 
 	EVRInitError init_error = VRInitError_None;
 	EVRInputError input_error = VRInputError_None;
