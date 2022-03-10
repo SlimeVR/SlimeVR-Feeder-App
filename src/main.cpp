@@ -11,10 +11,12 @@
 #include <fmt/ostream.h>
 #include <iostream>
 #include <fstream>
+#include <args.hxx>
 
 #include "pathtools_excerpt.h"
 #include "matrix_utils.h"
 #include "bridge.hpp"
+#include "setup.hpp"
 #include <ProtobufMessages.pb.h>
 
 using namespace vr;
@@ -261,7 +263,7 @@ struct OpenVRStuff {
 
 		if (size == 0 || (prop_error != TrackedProp_Success && prop_error != TrackedProp_BufferTooSmall)) {
 			if (prop_error != TrackedProp_Success) {
-				fmt::print("Error: size getting IVRSystem::GetStringTrackedDeviceProperty({}): {}\n", prop, prop_error);
+				fmt::print("Error getting size: IVRSystem::GetStringTrackedDeviceProperty({}): {}\n", prop, system->GetPropErrorNameFromEnum(prop_error));
 			}
 
 			return std::nullopt;
@@ -272,7 +274,7 @@ struct OpenVRStuff {
 		prop_value.resize(size-1);
 
 		if (prop_error != TrackedProp_Success) {
-			fmt::print("Error: data getting IVRSystem::GetStringTrackedDeviceProperty({}): {}\n", prop, prop_error);
+			fmt::print("Error getting data: IVRSystem::GetStringTrackedDeviceProperty({}): {}\n", prop, system->GetPropErrorNameFromEnum(prop_error));
 			return std::nullopt;
 		}
 
@@ -407,12 +409,41 @@ void handle_signal(int num) {
 	}
 }
 
-void shutdown_vr(IVRSystem* _system) {
-	VR_Shutdown();
-}
-
 int main(int argc, char* argv[]) {
 	GOOGLE_PROTOBUF_VERIFY_VERSION;
+
+	args::ArgumentParser parser("Feeds controller/tracker data to SlimeVR Server.");
+	args::HelpFlag help(parser, "help", "Display this help menu", {'h', "help"});
+	args::CompletionFlag completion(parser, {"complete"});
+	args::Group setup_group(parser, "Setup options", args::Group::Validators::AtMostOne);
+	args::Flag install(setup_group, "install", "Installs the manifest and enables autostart. Used by the installer.", {"install"});
+	args::Flag uninstall(setup_group, "uninstall", "Removes the manifest file.", {"uninstall"});
+
+	try
+    {
+        parser.ParseCLI(argc, argv);
+    }
+    catch (args::Help)
+    {
+        std::cout << parser;
+        return 0;
+    }
+    catch (args::ParseError e)
+    {
+        std::cerr << e.what() << std::endl;
+        std::cerr << parser;
+        return 1;
+    }
+    catch (args::ValidationError e)
+    {
+        std::cerr << e.what() << std::endl;
+        std::cerr << parser;
+        return 1;
+    }
+
+	if (install || uninstall) {
+		return handle_setup(install);
+	}
 
 	EVRInitError init_error = VRInitError_None;
 	EVRInputError input_error = VRInputError_None;

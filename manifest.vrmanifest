@@ -1,16 +1,16 @@
 {
 	"source" : "builtin",
 	"applications": [{
-		"app_key": "test.SlimeVRFeeder",
+		"app_key": "slimevr.steamvr.feeder",
 		"launch_type": "binary",
-		"binary_path_windows": "SteamVR-Feeder-App.exe",
-		"is_dashboard_overlay": false,
+		"binary_path_windows": "SlimeVR-Feeder-App.exe",
+		"is_dashboard_overlay": true,
 		"action_manifest_path": "bindings/actions.json",
 
 		"strings": {
 			"en_us": {
-				"name": "My Test",
-				"description": "Bindings Test"
+				"name": "SlimeVR Feeder App",
+				"description": "Feeds controller and tracker data to SlimeVR Server"
 			}
 		}
 	}]

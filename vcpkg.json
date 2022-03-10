@@ -4,6 +4,7 @@
     "dependencies": [
         "fmt",
         "openvr",
-        "protobuf"
+        "protobuf",
+        "args"
     ]
 }
