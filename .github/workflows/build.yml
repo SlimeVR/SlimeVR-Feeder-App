@@ -1,0 +1,63 @@
+name: Build Feeder App
+on: [push, workflow_dispatch]
+
+jobs:
+  job:
+    name: ${{ matrix.os }}-${{ github.workflow }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest]
+    
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: true
+      
+      - uses: lukka/get-cmake@latest
+
+      - name: vcpkg setup/restore artifacts
+        uses: lukka/run-vcpkg@v10.1
+        id: runvcpkg
+        with:
+          vcpkgJsonGlob: 'vcpkg.json'
+      
+      - name: Prints output of run-vcpkg's action.
+        run: echo "root='${{ steps.runvcpkg.outputs.RUNVCPKG_VCPKG_ROOT_OUT }}', triplet='${{ steps.runvcpkg.outputs.RUNVCPKG_VCPKG_DEFAULT_TRIPLET_OUT }}' "
+
+      - name: Setup vcpkg env
+        run: vcpkg env
+        shell: cmd
+        if: matrix.os == 'windows-latest'
+
+      - name: CMake+vcpkg configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
+        shell: cmd
+
+      - name: Build
+        run: cmake --build build --config RelWithDebInfo
+        shell: cmd
+
+      # - name: List $RUNNER_WORKSPACE after build
+      #   run: find $RUNNER_WORKSPACE
+      #   shell: bash
+
+      - name: Package
+        run: cmake --build build --target package --config RelWithDebInfo
+        shell: cmd
+
+      - name: Get package path for Artifact
+        run: echo "artifactPath=$(realpath build/_CPack_Packages/*/ZIP/SlimeVR-Feeder-App-*/ --relative-to .)" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          path: ${{ env.artifactPath }}
+      
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: build/SlimeVR-Feeder-App-*.zip

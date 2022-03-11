@@ -39,7 +39,8 @@ install(FILES "${PROJECT_SOURCE_DIR}/manifest.vrmanifest"
 )
 
 if (WIN32)
-    install(FILES "${CMAKE_BINARY_DIR}/openvr_api.dll" "${CMAKE_BINARY_DIR}/fmt.dll" "${CMAKE_BINARY_DIR}/libprotobuf.dll" DESTINATION ".")
+    set(VCPKG_BINARIES "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/bin")
+    install(FILES "${VCPKG_BINARIES}/openvr_api.dll" "${VCPKG_BINARIES}/fmt.dll" "${VCPKG_BINARIES}/libprotobuf.dll" DESTINATION ".")
 endif()
 
 install(TARGETS "${PROJECT_NAME}"
