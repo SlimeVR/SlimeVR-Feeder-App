@@ -24,11 +24,7 @@ using namespace vr;
 
 // TODO: Temp Path
 static constexpr char* actions_path = "./bindings/actions.json";
-static constexpr char* pipe_name = "\\\\.\\pipe\\SlimeVRInput";
-
-// Consider Standing universe
-static constexpr ETrackingUniverseOrigin tracking_origin = ETrackingUniverseOrigin::TrackingUniverseRawAndUncalibrated;
-//static constexpr ETrackingUniverseOrigin tracking_origin = ETrackingUniverseOrigin::TrackingUniverseStanding;
+static constexpr char* config_path = "./config.txt";
 
 enum class BodyPosition {
 	Head = 0,
@@ -241,6 +237,7 @@ struct OpenVRStuff {
 
 	IVRSystem* system = nullptr;
 	IVRInput* input = nullptr;
+	ETrackingUniverseOrigin universe;
 
 	VRActiveActionSet_t actionSet = { 0 };
 
@@ -296,7 +293,7 @@ struct OpenVRStuff {
 	void Tick(bool just_connected) {
 		TrackedDevicePose_t device_poses[k_unMaxTrackedDeviceCount];
 
-		system->GetDeviceToAbsoluteTrackingPose(tracking_origin, 0, device_poses, k_unMaxTrackedDeviceCount);
+		system->GetDeviceToAbsoluteTrackingPose(universe, 0, device_poses, k_unMaxTrackedDeviceCount);
 		for (unsigned int jjj = 0; jjj < (int)BodyPosition::BodyPosition_Count; ++jjj) {
 			VRInputValueHandle_t activeOrigin = value_handles[jjj];
 			if (activeOrigin == k_ulInvalidInputValueHandle) {
@@ -331,7 +328,7 @@ struct OpenVRStuff {
 
 		for (unsigned int jjj = 0; jjj < (int)BodyPosition::BodyPosition_Count; ++jjj) {
 			InputPoseActionData_t pose;
-			input_error = input->GetPoseActionDataRelativeToNow(actions[jjj], tracking_origin, 0, &pose, sizeof(pose), 0);
+			input_error = input->GetPoseActionDataRelativeToNow(actions[jjj], universe, 0, &pose, sizeof(pose), 0);
 			if (input_error != EVRInputError::VRInputError_None) {
 				fmt::print("Error: IVRInput::GetPoseActionDataRelativeToNow: {}\n", input_error);
 				continue;
@@ -410,37 +407,70 @@ void handle_signal(int num) {
 	}
 }
 
+static const std::unordered_map<std::string, ETrackingUniverseOrigin> universe_map {
+	{"seated", ETrackingUniverseOrigin::TrackingUniverseSeated},
+	{"standing", ETrackingUniverseOrigin::TrackingUniverseStanding},
+	{"raw", ETrackingUniverseOrigin::TrackingUniverseRawAndUncalibrated},
+};
+static constexpr ETrackingUniverseOrigin universe_default = ETrackingUniverseOrigin::TrackingUniverseRawAndUncalibrated;
+
 int main(int argc, char* argv[]) {
 	GOOGLE_PROTOBUF_VERIFY_VERSION;
 
 	args::ArgumentParser parser("Feeds controller/tracker data to SlimeVR Server.");
 	args::HelpFlag help(parser, "help", "Display this help menu", {'h', "help"});
 	args::CompletionFlag completion(parser, {"complete"});
+
+	args::MapFlag<std::string, ETrackingUniverseOrigin> universe(parser, "universe", "Tracking Universe. Possible values:\n  raw: raw/uncalibrated space sent by driver (current default)\n  seated: seated universe\n  standing: standing universe", {"universe"}, universe_map, universe_default);
+
 	args::Group setup_group(parser, "Setup options", args::Group::Validators::AtMostOne);
 	args::Flag install(setup_group, "install", "Installs the manifest and enables autostart. Used by the installer.", {"install"});
 	args::Flag uninstall(setup_group, "uninstall", "Removes the manifest file.", {"uninstall"});
 
-	try
-    {
-        parser.ParseCLI(argc, argv);
-    }
-    catch (args::Help)
-    {
-        std::cout << parser;
-        return 0;
-    }
-    catch (args::ParseError e)
-    {
-        std::cerr << e.what() << std::endl;
-        std::cerr << parser;
-        return 1;
-    }
-    catch (args::ValidationError e)
-    {
-        std::cerr << e.what() << std::endl;
-        std::cerr << parser;
-        return 1;
-    }
+	std::string configFileName = Path_MakeAbsolute(config_path, Path_StripFilename(Path_GetExecutablePath()));
+	std::ifstream configFile(configFileName);
+
+	std::vector<std::string> args;
+
+	for (std::string line; std::getline(configFile, line); ) {
+		const auto comment_pos = line.find("#");
+		if (comment_pos == 0) {
+			continue; // line immediately starts with a comment.
+		}
+		const auto end = line.find_last_not_of(" \t", comment_pos - 1);
+		if (end == std::string::npos) {
+			continue; // line consists of only blank characters or comments.
+		}
+		const auto begin = line.find_first_not_of(" \t");
+		if (begin == std::string::npos) {
+			continue; // line consists of only blank characters. should be caught by the previous if statement, though.
+		}
+
+		line = line.substr(begin, end - begin + 1); // perform the actual trimming
+
+		args.push_back(line);
+	}
+
+	// place command line arguments on the end, to override any arguments in the config file.
+	for (int iii = 1; iii < argc; ++iii) {
+		args.push_back(argv[iii]);
+	}
+
+	try {
+		parser.Prog(argv[0]);
+		parser.ParseArgs(args);
+	} catch (args::Help) {
+		std::cout << parser;
+		return 0;
+	} catch (args::ParseError e) {
+		std::cerr << e.what() << std::endl;
+		std::cerr << parser;
+		return 1;
+	} catch (args::ValidationError e) {
+		std::cerr << e.what() << std::endl;
+		std::cerr << parser;
+		return 1;
+	}
 
 	if (install || uninstall) {
 		return handle_setup(install);
@@ -465,6 +495,7 @@ int main(int argc, char* argv[]) {
 
 	stuff.system = system.get();
 	stuff.input = VRInput();
+	stuff.universe = universe.Get();
 
 	// Ensure VR Compositor is available, otherwise getting poses causes a crash (openvr v1.3.22)
 	if (!VRCompositor()) {
