@@ -417,7 +417,7 @@ static constexpr ETrackingUniverseOrigin universe_default = ETrackingUniverseOri
 int main(int argc, char* argv[]) {
 	GOOGLE_PROTOBUF_VERIFY_VERSION;
 
-	args::ArgumentParser parser("Feeds controller/tracker data to SlimeVR Server.");
+	args::ArgumentParser parser("Feeds controller/tracker data to SlimeVR Server.", "This program also parses arguments from a config file \"config.txt\" in the same directory as the executable. It is formatted as one line per option, and ignores characters on a line after a '#' character. Options passed on the command line are parsed after those read from the config file, and thus override options read from the config file.");
 	args::HelpFlag help(parser, "help", "Display this help menu", {'h', "help"});
 	args::CompletionFlag completion(parser, {"complete"});
 
