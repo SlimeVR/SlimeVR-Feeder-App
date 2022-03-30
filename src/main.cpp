@@ -422,6 +422,7 @@ int main(int argc, char* argv[]) {
 	args::CompletionFlag completion(parser, {"complete"});
 
 	args::MapFlag<std::string, ETrackingUniverseOrigin> universe(parser, "universe", "Tracking Universe. Possible values:\n  raw: raw/uncalibrated space sent by driver (current default)\n  seated: seated universe\n  standing: standing universe", {"universe"}, universe_map, universe_default);
+	args::ValueFlag<uint32_t> tps(parser, "tps", "Ticks per second. i.e. the number of times per second to send tracking information to slimevr server. Default is 100.", {"tps"}, 100);
 
 	args::Group setup_group(parser, "Setup options", args::Group::Validators::AtMostOne);
 	args::Flag install(setup_group, "install", "Installs the manifest and enables autostart. Used by the installer.", {"install"});
@@ -536,6 +537,11 @@ int main(int argc, char* argv[]) {
 
 	stuff.UpdateValueHandles(action_handles, false);
 
+	auto tick_ns = std::chrono::nanoseconds(1'000'000'000 / tps.Get());
+	auto next_tick = std::chrono::duration_cast<std::chrono::nanoseconds>(
+		std::chrono::high_resolution_clock::now().time_since_epoch()
+	);
+
 	// event loop
 	while (!should_exit) {
 		bool just_connected = bridge->runFrame();
@@ -575,8 +581,19 @@ int main(int argc, char* argv[]) {
 
 		stuff.Tick(just_connected);
 
-		// run as fast as possible (for now), but make sure that we give time back to the OS.
-		std::this_thread::yield();
+		next_tick += tick_ns;
+
+		auto wait_ns = next_tick - std::chrono::duration_cast<std::chrono::nanoseconds>(
+			std::chrono::high_resolution_clock::now().time_since_epoch()
+		);
+
+		if (wait_ns.count() > 0) {
+			std::this_thread::sleep_for(wait_ns);
+		} else {
+			// I don't care if you want more TPS than the feeder can provide, I'm yielding to the OS anyway.
+			// if this is really an issue for someone, they can open an issue.
+			std::this_thread::yield();
+		}
 	}
 
 	return 0;
