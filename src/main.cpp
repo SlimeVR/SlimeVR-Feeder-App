@@ -85,20 +85,29 @@ static constexpr SlimeVRPosition positionIDs[(int)BodyPosition::BodyPosition_Cou
 	SlimeVRPosition::Chest
 };
 
-static constexpr char* positionNames[(int)BodyPosition::BodyPosition_Count] = {
-	"Head",
-	"LeftHand",
-	"RightHand",
+static constexpr char* positionNames[(int)SlimeVRPosition::GenericController + 1] = {
+	"None",
+	"Waist",
 	"LeftFoot",
 	"RightFoot",
-	"LeftShoulder",
-	"RightShoulder",
-	"LeftElbow",
-	"RightElbow",
+	"Chest",
 	"LeftKnee",
 	"RightKnee",
-	"Waist",
-	"Chest"
+	"LeftElbow",
+	"RightElbow",
+	"LeftShoulder",
+	"RightShoulder",
+	"LeftHand",
+	"RightHand",
+	"LeftController",
+	"RightController",
+	"Head",
+	"Neck",
+	"Camera",
+	"Keyboard",
+	"HMD",
+	"Beacon",
+	"GenericController"
 };
 
 static constexpr char* actions[(int)BodyPosition::BodyPosition_Count] = {
@@ -117,17 +126,132 @@ static constexpr char* actions[(int)BodyPosition::BodyPosition_Count] = {
 	"/actions/main/in/chest"
 };
 
-class Tracker {
-	SlimeVRBridge &bridge;
-	HmdQuaternion_t current_rotation = { 0 };
-	HmdVector3_t current_position = { 0 };
-	TrackedDeviceIndex_t index = k_unTrackedDeviceIndexInvalid;
+template<typename F>
+std::optional<std::string> GetOpenVRString(F &&openvr_closure) {
+	uint32_t size = openvr_closure(nullptr, 0);
 
+	if (size == 0) {
+		return std::nullopt;
+	}
+
+	std::string prop_value = std::string(size, '\0');
+	uint32_t error = openvr_closure(prop_value.data(), size);
+	prop_value.resize(size-1);
+
+	if (error == 0) {
+		return std::nullopt;
+	}
+
+	return prop_value;
+}
+
+VRActionHandle_t GetAction(const char* action_path) {
+	VRActionHandle_t handle = k_ulInvalidInputValueHandle;
+	EVRInputError error = (EVRInputError)VRInput()->GetActionHandle(action_path, &handle);
+	if (error != VRInputError_None) {
+		fmt::print("Error: Unable to get action handle '{}': {}", action_path, error);
+		// consider exiting?
+	}
+
+	return handle;
+}
+
+struct TrackerInfo {
+	std::string name;
+	std::optional<std::string> serial;
+	SlimeVRPosition old_position = SlimeVRPosition::None;
+	SlimeVRPosition position = SlimeVRPosition::None;
+	bool pose_was_valid = false;
+
+	bool old_valid = false;
 	bool current_valid = false;
-public:
-	Tracker(SlimeVRBridge &bridge): bridge(bridge) {}
+	bool is_slimevr = false;
+};
 
-	void SendStatus(messages::TrackerStatus_Status status_val) {
+class Trackers {
+private:
+	TrackerInfo tracker_info[k_unMaxTrackedDeviceCount];
+	TrackedDevicePose_t poses[k_unMaxTrackedDeviceCount];
+
+	TrackedDeviceIndex_t current_trackers[k_unMaxTrackedDeviceCount];
+	uint32_t current_trackers_size = 0;
+
+	SlimeVRBridge &bridge;
+public:
+	VRActiveActionSet_t actionSet;
+private:
+	ETrackingUniverseOrigin universe;
+	VRActionHandle_t action_handles[(int)BodyPosition::BodyPosition_Count];
+
+	Trackers(SlimeVRBridge &bridge, ETrackingUniverseOrigin universe): bridge(bridge), universe(universe) {}
+
+	std::optional<std::string> GetStringProp(TrackedDeviceIndex_t index, ETrackedDeviceProperty prop) {
+		if (index >= k_unMaxTrackedDeviceCount) {
+			fmt::print("GetStringProp: Got invalid index {}!\n", index);
+			return std::nullopt;
+		}
+
+		auto get_prop = [index, prop](char *prop_str, uint32_t passed_size) {
+			auto system = VRSystem();
+			vr::ETrackedPropertyError prop_error = TrackedProp_Success;
+			uint32_t size = system->GetStringTrackedDeviceProperty(index, prop, prop_str, passed_size, &prop_error);
+
+			if (size == 0 || (prop_error != TrackedProp_Success && prop_error != TrackedProp_BufferTooSmall)) {
+				if (prop_error != TrackedProp_Success) {
+					fmt::print("Error getting {}: IVRSystem::GetStringTrackedDeviceProperty({}): {}\n", size ? "data" : "size", prop, system->GetPropErrorNameFromEnum(prop_error));
+				}
+
+				return (uint32_t)0;
+			}
+
+			return size;
+		};
+		
+		return GetOpenVRString(get_prop);
+	}
+
+	std::optional<std::string> GetLocalizedName(VRInputValueHandle_t handle) {
+		std::string name = std::string(100, '\0');
+		EVRInputError input_error = VRInput()->GetOriginLocalizedName(handle, name.data(), 100, EVRInputStringBits::VRInputString_Hand | EVRInputStringBits::VRInputString_ControllerType);
+
+		if (input_error != VRInputError_None && input_error != VRInputError_BufferTooSmall) {
+			if (input_error != VRInputError_None) {
+				fmt::print("Error getting data: IVRInput::GetOriginLocalizedName(): {}\n", input_error);
+			}
+
+			return std::nullopt;
+		}
+
+		name.resize(strlen(name.data()));
+
+		return name;
+	}
+
+	std::optional<TrackedDeviceIndex_t> GetIndex(VRInputValueHandle_t value_handle) {
+		InputOriginInfo_t info;
+		EVRInputError error = VRInput()->GetOriginTrackedDeviceInfo(value_handle, &info, sizeof(info));
+		if (error != EVRInputError::VRInputError_None) {
+			fmt::print("Error: IVRInput::GetOriginTrackedDeviceInfo: {}\n", error);
+			return std::nullopt;
+		}
+
+		if (info.trackedDeviceIndex >= k_unMaxTrackedDeviceCount) {
+			fmt::print("GetIndex: Got invalid index {}!\n", info.trackedDeviceIndex);
+			return std::nullopt;
+		}
+
+		return std::make_optional(info.trackedDeviceIndex);
+	}
+
+	void SendStatus(TrackedDeviceIndex_t index, messages::TrackerStatus_Status status_val) {
+		if (index >= k_unMaxTrackedDeviceCount) {
+			fmt::print("SendStatus: Got invalid index {}!\n", index);
+			return;
+		}
+
+		if (tracker_info[index].is_slimevr) {
+			return; // don't send information on slimes
+		}
 		messages::ProtobufMessage message;
 		messages::TrackerStatus *status = message.mutable_tracker_status();
 
@@ -139,187 +263,137 @@ public:
 		fmt::print("Device (Index {}) status: {} ({})\n", index, messages::TrackerStatus_Status_Name(status_val), status_val);
 	}
 
-	void Update(TrackedDevicePose_t pose, bool just_connected) {
+	void Update(TrackedDeviceIndex_t index, bool just_connected) {
+		if (index >= k_unMaxTrackedDeviceCount) {
+			fmt::print("Update: Got invalid index {}!\n", index);
+			return;
+		}
+		auto pose = poses[index];
+		auto info = tracker_info + index;
+
+		if (info->is_slimevr) {
+			return; // don't bother with slimes
+		}
+
 		if (pose.bPoseIsValid) {
-			if (!current_valid) {
-				current_valid = true;
-				SendStatus(messages::TrackerStatus_Status_OK);
-			}
+			// if (!info->pose_was_valid) {
+			// 	info->pose_was_valid = true;
+			// 	SendStatus(index, messages::TrackerStatus_Status_OK);
+			// }
 
 			HmdQuaternion_t new_rotation = GetRotation(pose.mDeviceToAbsoluteTracking);
 			HmdVector3_t new_position = GetPosition(pose.mDeviceToAbsoluteTracking);
 
-			// only update if there's a difference, or if we just connected
-			if (
-				just_connected ||
-				current_rotation.w != new_rotation.w || current_rotation.x != new_rotation.x ||
-				current_rotation.y != new_rotation.y || current_rotation.z != new_rotation.z ||
-				current_position.v[0] != new_position.v[0] || current_position.v[1] != new_position.v[1] ||
-				current_position.v[2] != new_position.v[2]
-			) {
-				current_position = new_position;
-				current_rotation = new_rotation;
+			// send our position message
+			messages::ProtobufMessage message;
+			messages::Position *position = message.mutable_position();
+			position->set_x(new_position.v[0]);
+			position->set_y(new_position.v[1]);
+			position->set_z(new_position.v[2]);
+			position->set_qw(new_rotation.w);
+			position->set_qx(new_rotation.x);
+			position->set_qy(new_rotation.y);
+			position->set_qz(new_rotation.z);
+			position->set_tracker_id(index);
+			position->set_data_source(
+				pose.eTrackingResult == ETrackingResult::TrackingResult_Fallback_RotationOnly
+				? messages::Position_DataSource_IMU
+				: messages::Position_DataSource_FULL
+			);
 
-				// send our position message
-				messages::ProtobufMessage message;
-				messages::Position *position = message.mutable_position();
-				position->set_x(current_position.v[0]);
-				position->set_y(current_position.v[1]);
-				position->set_z(current_position.v[2]);
-				position->set_qw(current_rotation.w);
-				position->set_qx(current_rotation.x);
-				position->set_qy(current_rotation.y);
-				position->set_qz(current_rotation.z);
-				position->set_tracker_id(index);
-				position->set_data_source(
-					pose.eTrackingResult == ETrackingResult::TrackingResult_Fallback_RotationOnly
-					? messages::Position_DataSource_IMU
-					: messages::Position_DataSource_FULL
-				);
-
-				bridge.sendMessage(message);
-			}
+			bridge.sendMessage(message);
 		}
 		
 		// send status update on change, or if we just connected.
-		if (current_valid && !pose.bPoseIsValid || just_connected) {
-			current_valid = false;
-			current_position = {0};
-			current_rotation = {0};
+		if ((info->pose_was_valid || just_connected) && !pose.bPoseIsValid) {
+			info->pose_was_valid = false;
 			if (!pose.bDeviceIsConnected) {
-				SendStatus(messages::TrackerStatus_Status_DISCONNECTED);
+				SendStatus(index, messages::TrackerStatus_Status_DISCONNECTED);
 			} else if (pose.eTrackingResult == ETrackingResult::TrackingResult_Running_OutOfRange) {
-				SendStatus(messages::TrackerStatus_Status_OCCLUDED);
+				SendStatus(index, messages::TrackerStatus_Status_OCCLUDED);
 			} else {
-				SendStatus(messages::TrackerStatus_Status_ERROR);
+				SendStatus(index, messages::TrackerStatus_Status_ERROR);
 			}
+		} else if (pose.bPoseIsValid && just_connected) {
+			SendStatus(index, messages::TrackerStatus_Status_OK);
 		}
 	}
 
-	template <typename N, typename S>
-	void SetIndex(TrackedDeviceIndex_t idx, BodyPosition pos, N &&get_name, S &&get_serial, bool send_anyway) {
-		if (index != k_unTrackedDeviceIndexInvalid) {
-			fmt::print("Warning: Tracked Device Index changed from {} to {}. Report this, because assumptions were incorrectly made.", index, idx);
+	void UpdateTrackerPosition(TrackedDeviceIndex_t idx, bool send_anyway) {
+		if (idx >= k_unMaxTrackedDeviceCount) {
+			fmt::print("UpdateTrackerPosition: Got invalid index {}!\n", idx);
+			return;
+		}
+		auto info = tracker_info + idx;
+
+		if (info->is_slimevr) {
+			return; // don't send information on slimes
 		}
 
-		if (index != idx || send_anyway) {
-			index = idx;
-
-			auto name = get_name();
-			std::optional<std::string> serial = get_serial();
-
+		if (info->position != info->old_position || send_anyway) {
 			messages::ProtobufMessage message;
 			messages::TrackerAdded *added = message.mutable_tracker_added();
-			added->set_tracker_id(index);
-			added->set_tracker_role((int)positionIDs[(int)pos]);
-			added->set_tracker_name(name);
-			if (serial.has_value()) {
-				added->set_tracker_serial(serial.value());
+			added->set_tracker_id(idx);
+			added->set_tracker_role((int)info->position);
+			added->set_tracker_name(info->name);
+			if (info->serial.has_value()) {
+				added->set_tracker_serial(info->serial.value());
 			}
 
 			bridge.sendMessage(message);
 
 			// log it.
-			fmt::print("Found device \"{}\" at {} ({}) with index {}\n", name, positionNames[(int)pos], (int)positionIDs[(int)pos] , index);
+			fmt::print("Found device \"{}\" at {} ({}) with index {}\n", info->name, positionNames[(int)info->position], (int)info->position, idx);
 		}
 	}
-};
 
-struct OpenVRStuff {
-	// note: still windows only, i just wanted to be able to format
-	SlimeVRBridge &bridge;
+public:
+	static std::optional<Trackers> Create(SlimeVRBridge &bridge, ETrackingUniverseOrigin universe);
 
-	OpenVRStuff(SlimeVRBridge &bridge): bridge(bridge), trackers {
-		// UGH
-		Tracker(bridge), Tracker(bridge), Tracker(bridge), Tracker(bridge), Tracker(bridge), Tracker(bridge), Tracker(bridge),
-		Tracker(bridge), Tracker(bridge), Tracker(bridge), Tracker(bridge), Tracker(bridge), Tracker(bridge)
-	} {}
+	void Detect(bool just_connected) {
+		for (auto iii = 0; iii < k_unMaxTrackedDeviceCount; ++iii) {
+			auto info = tracker_info + iii;
+			info->old_valid = info->current_valid;
+			info->current_valid = false;
 
-	IVRSystem* system = nullptr;
-	IVRInput* input = nullptr;
-	ETrackingUniverseOrigin universe;
-
-	VRActiveActionSet_t actionSet = { 0 };
-
-	VRInputValueHandle_t value_handles[(int)BodyPosition::BodyPosition_Count] = { k_ulInvalidInputValueHandle };
-	Tracker trackers[(int)BodyPosition::BodyPosition_Count];
-
-	VRActionHandle_t GetAction(const char* action_path) {
-		VRActionHandle_t handle = k_ulInvalidInputValueHandle;
-		EVRInputError error = (EVRInputError)input->GetActionHandle(action_path, &handle);
-		if (error != VRInputError_None) {
-			fmt::print("Error: Unable to get action handle '{}': {}", action_path, error);
-			// consider exiting?
+			info->old_position = info->position;
 		}
 
-		return handle;
-	}
+		current_trackers_size = 0;
 
-	std::optional<std::string> GetStringProp(TrackedDeviceIndex_t index, ETrackedDeviceProperty prop) {
-		vr::ETrackedPropertyError prop_error = ETrackedPropertyError::TrackedProp_Success;
-		uint32_t size = system->GetStringTrackedDeviceProperty(index, prop, nullptr, 0, &prop_error);
+		// detect everything, regardless of role
+		current_trackers_size += VRSystem()->GetSortedTrackedDeviceIndicesOfClass(TrackedDeviceClass_HMD, current_trackers, k_unMaxTrackedDeviceCount);
+		current_trackers_size += VRSystem()->GetSortedTrackedDeviceIndicesOfClass(TrackedDeviceClass_Controller, current_trackers + current_trackers_size, k_unMaxTrackedDeviceCount - current_trackers_size);
+		current_trackers_size += VRSystem()->GetSortedTrackedDeviceIndicesOfClass(TrackedDeviceClass_GenericTracker, current_trackers + current_trackers_size, k_unMaxTrackedDeviceCount - current_trackers_size);
 
-		if (size == 0 || (prop_error != TrackedProp_Success && prop_error != TrackedProp_BufferTooSmall)) {
-			if (prop_error != TrackedProp_Success) {
-				fmt::print("Error getting size: IVRSystem::GetStringTrackedDeviceProperty({}): {}\n", prop, system->GetPropErrorNameFromEnum(prop_error));
+		if (just_connected) {
+			fmt::print("number of trackers: {}\n", current_trackers_size);
+		}
+
+		for (auto iii = 0; iii < current_trackers_size; ++iii) {
+			auto index = current_trackers[iii];
+			auto driver = this->GetStringProp(index, ETrackedDeviceProperty::Prop_TrackingSystemName_String);
+			if (driver == "SlimeVR") {
+				tracker_info[index].is_slimevr = true;
+			} else {
+				tracker_info[index].is_slimevr = false;
 			}
 
-			return std::nullopt;
-		}
-
-		std::string prop_value = std::string(size, '\0');
-		system->GetStringTrackedDeviceProperty(index, prop, prop_value.data(), size, &prop_error);
-		prop_value.resize(size-1);
-
-		if (prop_error != TrackedProp_Success) {
-			fmt::print("Error getting data: IVRSystem::GetStringTrackedDeviceProperty({}): {}\n", prop, system->GetPropErrorNameFromEnum(prop_error));
-			return std::nullopt;
-		}
-
-		return std::make_optional(prop_value);
-	}
-
-	std::optional<TrackedDeviceIndex_t> GetIndex(VRInputValueHandle_t value_handle) {
-		InputOriginInfo_t info;
-		EVRInputError error = input->GetOriginTrackedDeviceInfo(value_handle, &info, sizeof(info));
-		if (error != EVRInputError::VRInputError_None) {
-			fmt::print("Error: IVRInput::GetOriginTrackedDeviceInfo: {}\n", error);
-			return std::nullopt;
-		}
-
-		return std::make_optional(info.trackedDeviceIndex);
-	}
-
-	void Tick(bool just_connected) {
-		TrackedDevicePose_t device_poses[k_unMaxTrackedDeviceCount];
-
-		system->GetDeviceToAbsoluteTrackingPose(universe, 0, device_poses, k_unMaxTrackedDeviceCount);
-		for (unsigned int jjj = 0; jjj < (int)BodyPosition::BodyPosition_Count; ++jjj) {
-			VRInputValueHandle_t activeOrigin = value_handles[jjj];
-			if (activeOrigin == k_ulInvalidInputValueHandle) {
-				continue;
+			auto controller_type = this->GetStringProp(index, ETrackedDeviceProperty::Prop_ControllerType_String);
+			if (controller_type.has_value()) {
+				tracker_info[index].name = controller_type.value();
+			} else {
+				// uhhhhhhhhhhhhhhh
+				tracker_info[index].name = fmt::format("Index{}", index);
 			}
 
-			// TODO: profile this. should we get the index every tick, or should we just do that outside?
-			std::optional<TrackedDeviceIndex_t> trackedDeviceIndex = GetIndex(activeOrigin);
-			if (!trackedDeviceIndex.has_value()) {
-				// this handle is no longer valid, discard it.
-				value_handles[jjj] = k_ulInvalidInputValueHandle;
-				// TODO: notify the server somehow.
-				// TODO: reset tracker object.
-				// already printed a message about this in GetIndex, so don't need additional logging.
-				continue;
-			}
+			tracker_info[index].serial = this->GetStringProp(index, ETrackedDeviceProperty::Prop_SerialNumber_String);
 
-			// TODO: Filter out SlimeVR Generated trackers, if applicable.
-
-			TrackedDevicePose_t &pose = device_poses[trackedDeviceIndex.value()];
-
-			trackers[jjj].Update(pose, just_connected);
+			tracker_info[index].current_valid = true;
 		}
-	}
 
-	void UpdateValueHandles(VRActionHandle_t(&actions)[(int)BodyPosition::BodyPosition_Count], bool just_connected) {
+		// detect roles, more specific names
+		auto input = VRInput();
 		EVRInputError input_error = input->UpdateActionState(&actionSet, sizeof(VRActiveActionSet_t), 1);
 		if (input_error != EVRInputError::VRInputError_None) {
 			fmt::print("Error: IVRInput::UpdateActionState: {}\n", input_error);
@@ -328,45 +402,48 @@ struct OpenVRStuff {
 
 		for (unsigned int jjj = 0; jjj < (int)BodyPosition::BodyPosition_Count; ++jjj) {
 			InputPoseActionData_t pose;
-			input_error = input->GetPoseActionDataRelativeToNow(actions[jjj], universe, 0, &pose, sizeof(pose), 0);
+			input_error = input->GetPoseActionDataRelativeToNow(action_handles[jjj], universe, 0, &pose, sizeof(pose), 0);
 			if (input_error != EVRInputError::VRInputError_None) {
 				fmt::print("Error: IVRInput::GetPoseActionDataRelativeToNow: {}\n", input_error);
 				continue;
 			}
 
 			if (pose.bActive) {
-				if (value_handles[jjj] != pose.activeOrigin || just_connected) {
-					value_handles[jjj] = pose.activeOrigin;
-					std::optional<TrackedDeviceIndex_t> trackedDeviceIndex = GetIndex(pose.activeOrigin);
-					if (!trackedDeviceIndex.has_value()) {
-						// already printed a message about this in GetIndex, just continue.
-						continue;
-					}
-
-					auto driver = this->GetStringProp(trackedDeviceIndex.value(), ETrackedDeviceProperty::Prop_TrackingSystemName_String);
-					if (driver == "SlimeVR") {
-						// we ignore SlimeVR trackers, because that's where we're reporting to!
-						continue;
-					}
-
-					auto get_name = [&, this]() {
-						auto controller_type = this->GetStringProp(trackedDeviceIndex.value(), ETrackedDeviceProperty::Prop_ControllerType_String);
-						
-						if (controller_type.has_value()) {
-							return controller_type.value();
-						} else {
-							// uhhhhhhhhhhhhhhh
-							return fmt::format("Index{}", trackedDeviceIndex.value());
-						}
-					};
-
-					auto get_serial = [&, this]() {
-						return this->GetStringProp(trackedDeviceIndex.value(), ETrackedDeviceProperty::Prop_SerialNumber_String);
-					};
-
-					trackers[jjj].SetIndex(trackedDeviceIndex.value(), (BodyPosition)jjj, get_name, get_serial, just_connected);
+				std::optional<TrackedDeviceIndex_t> trackedDeviceIndex = GetIndex(pose.activeOrigin);
+				if (!trackedDeviceIndex.has_value()) {
+					// already printed a message about this in GetIndex, just continue.
+					continue;
 				}
+
+				auto index = trackedDeviceIndex.value();
+
+				auto name = GetLocalizedName(pose.activeOrigin);
+				if (name.has_value()) {
+					tracker_info[index].name = name.value();
+				}
+
+				tracker_info[index].position = positionIDs[jjj];
 			}
+		}
+
+		for (auto iii = 0; iii < k_unMaxTrackedDeviceCount; ++iii) {
+			auto info = tracker_info + iii;
+
+			if (info->old_valid && !info->current_valid && !just_connected) {
+				SendStatus(iii, messages::TrackerStatus_Status_DISCONNECTED);
+			}
+
+			if (info->current_valid) {
+				UpdateTrackerPosition(iii, just_connected || (!info->old_valid && info->current_valid));
+			}
+		}
+	}
+
+	void Tick(bool just_connected) {
+		VRSystem()->GetDeviceToAbsoluteTrackingPose(universe, 0, poses, k_unMaxTrackedDeviceCount);
+		for (unsigned int iii = 0; iii < current_trackers_size; ++iii) {
+			auto index = current_trackers[iii];
+			Update(index, just_connected);
 		}
 	}
 
@@ -374,7 +451,7 @@ struct OpenVRStuff {
 		InputDigitalActionData_t action_data;
 		EVRInputError input_error = VRInputError_None;
 
-		input_error = input->GetDigitalActionData(action_handle, &action_data, sizeof(InputDigitalActionData_t), 0);
+		input_error = VRInput()->GetDigitalActionData(action_handle, &action_data, sizeof(InputDigitalActionData_t), 0);
 		if (input_error == EVRInputError::VRInputError_None) {
 			constexpr bool falling_edge = false; // rising edge for now, making it easy to switch for now just in case.
 			if (action_data.bChanged && (action_data.bState ^ falling_edge) && server_name.has_value()) {
@@ -394,6 +471,38 @@ struct OpenVRStuff {
 		}
 	}
 };
+
+std::optional<Trackers> Trackers::Create(SlimeVRBridge &bridge, ETrackingUniverseOrigin universe){
+	VRActionSetHandle_t action_set_handle;
+	EVRInputError input_error;
+	Trackers result(bridge, universe);
+
+	std::string actionsFileName = Path_MakeAbsolute(actions_path, Path_StripFilename(Path_GetExecutablePath()));
+
+	if ((input_error = VRInput()->SetActionManifestPath(actionsFileName.c_str())) != EVRInputError::VRInputError_None) {
+		fmt::print("Error: IVRInput::SetActionManifectPath: {}\n", input_error);
+		return std::nullopt;
+	}
+
+	if ((input_error = VRInput()->GetActionSetHandle("/actions/main", &action_set_handle)) != EVRInputError::VRInputError_None) {
+		fmt::print("Error: VRInput::GetActionSetHandle: {}\n", input_error);
+		return std::nullopt;
+	}
+
+	result.actionSet = {
+		action_set_handle,
+		k_ulInvalidInputValueHandle,
+		k_ulInvalidActionSetHandle,
+		0,
+		0
+	};
+
+	for (unsigned int iii = 0; iii < (int)BodyPosition::BodyPosition_Count; ++iii) {
+		result.action_handles[iii] = GetAction(actions[iii]);
+	}
+
+	return result;
+}
 
 volatile static sig_atomic_t should_exit = 0;
 
@@ -483,10 +592,7 @@ int main(int argc, char* argv[]) {
 	EVRInputError input_error = VRInputError_None;
 
 	signal(SIGINT, handle_signal);
-	auto bridge = SlimeVRBridge::factory();
-	OpenVRStuff stuff(*bridge);
 
-	// maybe prefer Background?
 	std::unique_ptr<IVRSystem, decltype(&shutdown_vr)> system(VR_Init(&init_error, VRApplication_Overlay), &shutdown_vr);
 	if (init_error != VRInitError_None) {
 		system = nullptr;
@@ -494,60 +600,39 @@ int main(int argc, char* argv[]) {
 		return EXIT_FAILURE;
 	}
 
-	stuff.system = system.get();
-	stuff.input = VRInput();
-	stuff.universe = universe.Get();
-
 	// Ensure VR Compositor is available, otherwise getting poses causes a crash (openvr v1.3.22)
 	if (!VRCompositor()) {
 		std::cout << "Failed to initialize VR compositor!" << std::endl;
 		return EXIT_FAILURE;
 	}
 
-	{
-		std::string actionsFileName = Path_MakeAbsolute(actions_path, Path_StripFilename(Path_GetExecutablePath()));
-
-		if ((input_error = stuff.input->SetActionManifestPath(actionsFileName.c_str())) != EVRInputError::VRInputError_None) {
-			fmt::print("Error: IVRInput::SetActionManifectPath: {}\n", input_error);
-			return EXIT_FAILURE;
-		}
-	}
-
-	VRActionHandle_t action_handles[(int)BodyPosition::BodyPosition_Count];
-	for (unsigned int iii = 0; iii < (int)BodyPosition::BodyPosition_Count; ++iii) {
-		action_handles[iii] = stuff.GetAction(actions[iii]);
-	}
-
-	VRActionHandle_t calibration_action = stuff.GetAction("/actions/main/in/request_calibration");
-	VRActionHandle_t confirm_action = stuff.GetAction("/actions/main/in/confirm");
-
-	VRActionSetHandle_t action_set_handle;
-	if ((input_error = stuff.input->GetActionSetHandle("/actions/main", &action_set_handle)) != EVRInputError::VRInputError_None) {
-		fmt::print("Error: VRInput::GetActionSetHandle: {}\n", input_error);
+	auto bridge = SlimeVRBridge::factory();
+	std::optional<Trackers> maybe_trackers = Trackers::Create(*bridge, universe.Get());
+	if (!maybe_trackers.has_value()) {
 		return EXIT_FAILURE;
 	}
 
-	stuff.actionSet = {
-		action_set_handle,
-		k_ulInvalidInputValueHandle,
-		k_ulInvalidActionSetHandle,
-		0,
-		0
-	};
+	Trackers trackers = maybe_trackers.value();
 
-	stuff.UpdateValueHandles(action_handles, false);
+	VRActionHandle_t calibration_action = GetAction("/actions/main/in/request_calibration");
+	VRActionHandle_t confirm_action = GetAction("/actions/main/in/confirm");
+
+	//trackers.Detect(false);
 
 	auto tick_ns = std::chrono::nanoseconds(1'000'000'000 / tps.Get());
 	auto next_tick = std::chrono::duration_cast<std::chrono::nanoseconds>(
 		std::chrono::high_resolution_clock::now().time_since_epoch()
 	);
 
+	bool actions_loaded = false;
+
 	// event loop
 	while (!should_exit) {
 		bool just_connected = bridge->runFrame();
 
 		VREvent_t event;
-		if (system->PollNextEvent(&event, sizeof(event))) {
+		// each loop is now spaced apart, so let's process all events right now.
+		while (system->PollNextEvent(&event, sizeof(event))) {
 			switch (event.eventType) {
 			case VREvent_Quit:
 				return 0;
@@ -558,11 +643,22 @@ int main(int argc, char* argv[]) {
 			case VREvent_TrackedDeviceRoleChanged:
 			case VREvent_TrackedDeviceUpdated:
 			case VREvent_DashboardDeactivated:
-				// stuff.UpdateValueHandles(action_handles, just_connected);
+				// trackers.Detect(just_connected);
+				break;
+
+			case VREvent_Input_BindingLoadSuccessful:
+				if (!actions_loaded) {
+					VRInput()->UpdateActionState(&trackers.actionSet, sizeof(VRActiveActionSet_t), 1);
+				}
+				break;
+
+			case VREvent_ActionBindingReloaded:
+				actions_loaded = true;
+				//fmt::print("Actions locked and loaded!\n");
 				break;
 
 			default:
-				// fmt::print("Unhandled event: {}({})\n", stuff.system->GetEventTypeNameFromEnum((EVREventType)event.eventType), event.eventType);
+				// fmt::print("Unhandled event: {}({})\n", system->GetEventTypeNameFromEnum((EVREventType)event.eventType), event.eventType);
 				// I'm not relying on events to actually trigger anything right now, so don't bother printing anything.
 				break;
 			}
@@ -572,14 +668,16 @@ int main(int argc, char* argv[]) {
 		// TODO: I don't think there are any messages from the server that we care about at the moment, but let's make sure to not let the pipe fill up.
 		bridge->getNextMessage(recievedMessage);
 
-		// TODO: don't do this every loop, we really shouldn't need to.
-		stuff.UpdateValueHandles(action_handles, just_connected);
+		if (actions_loaded) {
+			// TODO: don't do this every loop, we really shouldn't need to.
+			trackers.Detect(just_connected);
 
-		// TODO: rename these actions as appropriate, perhaps log them?
-		stuff.HandleDigitalActionBool(calibration_action, { "calibrate" });
-		stuff.HandleDigitalActionBool(confirm_action, { "Confirm" });
+			// TODO: rename these actions as appropriate, perhaps log them?
+			trackers.HandleDigitalActionBool(calibration_action, { "calibrate" });
+			trackers.HandleDigitalActionBool(confirm_action, { "Confirm" });
 
-		stuff.Tick(just_connected);
+			trackers.Tick(just_connected);
+		}
 
 		next_tick += tick_ns;
 
@@ -595,6 +693,8 @@ int main(int argc, char* argv[]) {
 			std::this_thread::yield();
 		}
 	}
+
+	fmt::print("Exiting cleanly!\n");
 
 	return 0;
 }
