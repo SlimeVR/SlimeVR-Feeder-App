@@ -156,25 +156,35 @@ VRActionHandle_t GetAction(const char* action_path) {
 	return handle;
 }
 
-struct TrackerInfo {
-	std::string name;
-	std::optional<std::string> serial;
-	SlimeVRPosition old_position = SlimeVRPosition::None;
-	SlimeVRPosition position = SlimeVRPosition::None;
-	bool pose_was_valid = false;
+enum class TrackerState {
+	DISCONNECTED,
+	WAITING,
+	RUNNING
+};
 
-	bool old_valid = false;
-	bool current_valid = false;
+struct TrackerInfo {
+	std::string name = "";
+	std::optional<std::string> serial = std::nullopt;
+	SlimeVRPosition position = SlimeVRPosition::None;
+	messages::TrackerStatus_Status status = messages::TrackerStatus_Status_DISCONNECTED;
+
+	TrackerState state = TrackerState::DISCONNECTED;
+	/// number of ticks since last detect or valid pose
+	uint8_t connection_timeout = 0;
+	/// number of ticks since NONE position was first detected
+	uint8_t detect_timeout = 0;
+
 	bool is_slimevr = false;
 };
 
 class Trackers {
 private:
-	TrackerInfo tracker_info[k_unMaxTrackedDeviceCount];
+	TrackerInfo tracker_info[k_unMaxTrackedDeviceCount] = {};
 	TrackedDevicePose_t poses[k_unMaxTrackedDeviceCount];
 
-	TrackedDeviceIndex_t current_trackers[k_unMaxTrackedDeviceCount];
-	uint32_t current_trackers_size = 0;
+	std::set<TrackedDeviceIndex_t> current_trackers = {};
+	//TrackedDeviceIndex_t current_trackers[k_unMaxTrackedDeviceCount];
+	//uint32_t current_trackers_size = 0;
 
 	SlimeVRBridge &bridge;
 public:
@@ -243,15 +253,24 @@ private:
 		return std::make_optional(info.trackedDeviceIndex);
 	}
 
-	void SendStatus(TrackedDeviceIndex_t index, messages::TrackerStatus_Status status_val) {
+	void SetStatus(TrackedDeviceIndex_t index, messages::TrackerStatus_Status status_val, bool send_anyway) {
 		if (index >= k_unMaxTrackedDeviceCount) {
-			fmt::print("SendStatus: Got invalid index {}!\n", index);
+			fmt::print("SetStatus: Got invalid index {}!\n", index);
 			return;
 		}
 
-		if (tracker_info[index].is_slimevr) {
+		auto info = tracker_info + index;
+
+		if (info->is_slimevr) {
 			return; // don't send information on slimes
 		}
+
+		if (info->status == status_val && !send_anyway) {
+			return; // already up to date;
+		}
+
+		info->status = status_val;
+
 		messages::ProtobufMessage message;
 		messages::TrackerStatus *status = message.mutable_tracker_status();
 
@@ -271,15 +290,24 @@ private:
 		auto pose = poses[index];
 		auto info = tracker_info + index;
 
+		if (info->state != TrackerState::RUNNING) {
+			return;
+		}
+
+		// if(pose.bDeviceIsConnected) {
+		// 	info->connection_timeout = 0;
+		// }
+
 		if (info->is_slimevr) {
 			return; // don't bother with slimes
 		}
 
-		if (pose.bPoseIsValid) {
-			// if (!info->pose_was_valid) {
-			// 	info->pose_was_valid = true;
-			// 	SendStatus(index, messages::TrackerStatus_Status_OK);
-			// }
+		if (pose.bPoseIsValid || pose.eTrackingResult == ETrackingResult::TrackingResult_Fallback_RotationOnly) {
+			if (pose.eTrackingResult == ETrackingResult::TrackingResult_Fallback_RotationOnly) {
+				SetStatus(index, messages::TrackerStatus_Status_OCCLUDED, just_connected);
+			} else {
+				SetStatus(index, messages::TrackerStatus_Status_OK, just_connected);
+			}
 
 			HmdQuaternion_t new_rotation = GetRotation(pose.mDeviceToAbsoluteTracking);
 			HmdVector3_t new_position = GetPosition(pose.mDeviceToAbsoluteTracking);
@@ -305,35 +333,71 @@ private:
 		}
 		
 		// send status update on change, or if we just connected.
-		if ((info->pose_was_valid || just_connected) && !pose.bPoseIsValid) {
-			info->pose_was_valid = false;
-			if (!pose.bDeviceIsConnected) {
-				SendStatus(index, messages::TrackerStatus_Status_DISCONNECTED);
-			} else if (pose.eTrackingResult == ETrackingResult::TrackingResult_Running_OutOfRange) {
-				SendStatus(index, messages::TrackerStatus_Status_OCCLUDED);
+		if (!pose.bDeviceIsConnected) {
+			SetStatus(index, messages::TrackerStatus_Status_DISCONNECTED, just_connected);
+		} else if (!pose.bPoseIsValid) {
+			if (pose.eTrackingResult == ETrackingResult::TrackingResult_Calibrating_OutOfRange) {
+				SetStatus(index, messages::TrackerStatus_Status_OCCLUDED, just_connected);
 			} else {
-				SendStatus(index, messages::TrackerStatus_Status_ERROR);
+				SetStatus(index, messages::TrackerStatus_Status_ERROR, just_connected);
 			}
-		} else if (pose.bPoseIsValid && just_connected) {
-			SendStatus(index, messages::TrackerStatus_Status_OK);
 		}
 	}
 
-	void UpdateTrackerPosition(TrackedDeviceIndex_t idx, bool send_anyway) {
-		if (idx >= k_unMaxTrackedDeviceCount) {
-			fmt::print("UpdateTrackerPosition: Got invalid index {}!\n", idx);
+	void SetPosition(TrackedDeviceIndex_t index, SlimeVRPosition position, bool send_anyway) {
+		if (index >= k_unMaxTrackedDeviceCount) {
+			fmt::print("SetPosition: Got invalid index {}!\n", index);
 			return;
 		}
-		auto info = tracker_info + idx;
+		auto info = tracker_info + index;
+
+		info->connection_timeout = 0;
 
 		if (info->is_slimevr) {
 			return; // don't send information on slimes
 		}
 
-		if (info->position != info->old_position || send_anyway) {
+		bool should_send = false;
+
+		switch (info->state) {
+			case TrackerState::DISCONNECTED:
+				info->position = position;
+				if (position == SlimeVRPosition::None) {
+					info->state = TrackerState::WAITING;
+					info->detect_timeout = 0;
+					fmt::print("Waiting for role for \"{}\" with index {}\n", info->name, index);
+				} else {
+					should_send = true;
+					info->state = TrackerState::RUNNING;
+				}
+				break;
+
+			case TrackerState::WAITING:
+				if (position != SlimeVRPosition::None || info->detect_timeout >= 100) {
+					if (info->detect_timeout >= 100) {
+						fmt::print("Role timeout reached for index {}.\n", index);
+					}
+					info->position = position;
+					info->state = TrackerState::RUNNING;
+					should_send = true;
+				} else {
+					// increment timeout
+					info->detect_timeout += 1;
+				}
+				break;
+
+			case TrackerState::RUNNING:
+				if (position != SlimeVRPosition::None && position != info->position) {
+					info->position = position;
+					should_send = true;
+				}
+				break;
+		}
+
+		if (should_send || (send_anyway && info->state == TrackerState::RUNNING)) {
 			messages::ProtobufMessage message;
 			messages::TrackerAdded *added = message.mutable_tracker_added();
-			added->set_tracker_id(idx);
+			added->set_tracker_id(index);
 			added->set_tracker_role((int)info->position);
 			added->set_tracker_name(info->name);
 			if (info->serial.has_value()) {
@@ -343,7 +407,7 @@ private:
 			bridge.sendMessage(message);
 
 			// log it.
-			fmt::print("Found device \"{}\" at {} ({}) with index {}\n", info->name, positionNames[(int)info->position], (int)info->position, idx);
+			fmt::print("Found device \"{}\" at {} ({}) with index {}\n", info->name, positionNames[(int)info->position], (int)info->position, index);
 		}
 	}
 
@@ -351,45 +415,42 @@ public:
 	static std::optional<Trackers> Create(SlimeVRBridge &bridge, ETrackingUniverseOrigin universe);
 
 	void Detect(bool just_connected) {
-		for (auto iii = 0; iii < k_unMaxTrackedDeviceCount; ++iii) {
-			auto info = tracker_info + iii;
-			info->old_valid = info->current_valid;
-			info->current_valid = false;
-
-			info->old_position = info->position;
-		}
-
-		current_trackers_size = 0;
+		current_trackers.clear();
+		uint32_t all_trackers_size = 0;
+		TrackedDeviceIndex_t all_trackers[k_unMaxTrackedDeviceCount];
 
 		// detect everything, regardless of role
-		current_trackers_size += VRSystem()->GetSortedTrackedDeviceIndicesOfClass(TrackedDeviceClass_HMD, current_trackers, k_unMaxTrackedDeviceCount);
-		current_trackers_size += VRSystem()->GetSortedTrackedDeviceIndicesOfClass(TrackedDeviceClass_Controller, current_trackers + current_trackers_size, k_unMaxTrackedDeviceCount - current_trackers_size);
-		current_trackers_size += VRSystem()->GetSortedTrackedDeviceIndicesOfClass(TrackedDeviceClass_GenericTracker, current_trackers + current_trackers_size, k_unMaxTrackedDeviceCount - current_trackers_size);
+		all_trackers_size += VRSystem()->GetSortedTrackedDeviceIndicesOfClass(TrackedDeviceClass_HMD, all_trackers, k_unMaxTrackedDeviceCount);
+		all_trackers_size += VRSystem()->GetSortedTrackedDeviceIndicesOfClass(TrackedDeviceClass_Controller, all_trackers + all_trackers_size, k_unMaxTrackedDeviceCount - all_trackers_size);
+		all_trackers_size += VRSystem()->GetSortedTrackedDeviceIndicesOfClass(TrackedDeviceClass_GenericTracker, all_trackers + all_trackers_size, k_unMaxTrackedDeviceCount - all_trackers_size);
 
 		if (just_connected) {
-			fmt::print("number of trackers: {}\n", current_trackers_size);
+			fmt::print("number of trackers: {}\n", all_trackers_size);
 		}
 
-		for (auto iii = 0; iii < current_trackers_size; ++iii) {
-			auto index = current_trackers[iii];
+		for (auto iii = 0; iii < all_trackers_size; ++iii) {
+			auto index = all_trackers[iii];
 			auto driver = this->GetStringProp(index, ETrackedDeviceProperty::Prop_TrackingSystemName_String);
-			if (driver == "SlimeVR") {
-				tracker_info[index].is_slimevr = true;
-			} else {
-				tracker_info[index].is_slimevr = false;
+			auto info = tracker_info + index;
+
+			info->is_slimevr = (driver == "SlimeVR");
+
+			// only write values once, to avoid overwriting good values later.
+			if (info->name == "") {
+				auto controller_type = this->GetStringProp(index, ETrackedDeviceProperty::Prop_ControllerType_String);
+				if (controller_type.has_value()) {
+					info->name = controller_type.value();
+				} else {
+					// uhhhhhhhhhhhhhhh
+					info->name = fmt::format("Index{}", index);
+				}
 			}
 
-			auto controller_type = this->GetStringProp(index, ETrackedDeviceProperty::Prop_ControllerType_String);
-			if (controller_type.has_value()) {
-				tracker_info[index].name = controller_type.value();
-			} else {
-				// uhhhhhhhhhhhhhhh
-				tracker_info[index].name = fmt::format("Index{}", index);
-			}
+			info->serial = this->GetStringProp(index, ETrackedDeviceProperty::Prop_SerialNumber_String);
 
-			tracker_info[index].serial = this->GetStringProp(index, ETrackedDeviceProperty::Prop_SerialNumber_String);
+			current_trackers.insert(index);
 
-			tracker_info[index].current_valid = true;
+			SetPosition(index, SlimeVRPosition::None, just_connected);
 		}
 
 		// detect roles, more specific names
@@ -422,29 +483,40 @@ public:
 					tracker_info[index].name = name.value();
 				}
 
-				tracker_info[index].position = positionIDs[jjj];
+				current_trackers.insert(index);
+
+				SetPosition(index, positionIDs[jjj], just_connected);
 			}
 		}
 
 		for (auto iii = 0; iii < k_unMaxTrackedDeviceCount; ++iii) {
 			auto info = tracker_info + iii;
 
-			if (info->old_valid && !info->current_valid && !just_connected) {
-				SendStatus(iii, messages::TrackerStatus_Status_DISCONNECTED);
+			if (info->state == TrackerState::DISCONNECTED) {
+				continue;
 			}
 
-			if (info->current_valid) {
-				UpdateTrackerPosition(iii, just_connected || (!info->old_valid && info->current_valid));
+			if (info->connection_timeout >= 100) {
+				fmt::print("Tracker connection timeout.\n");
+				info->state = TrackerState::DISCONNECTED;
+				SetStatus(iii, messages::TrackerStatus_Status_DISCONNECTED, just_connected);
+				info->name = "";
+				info->connection_timeout = 0;
+			} else {
+				info->connection_timeout += 1;
 			}
 		}
 	}
 
 	void Tick(bool just_connected) {
 		VRSystem()->GetDeviceToAbsoluteTrackingPose(universe, 0, poses, k_unMaxTrackedDeviceCount);
-		for (unsigned int iii = 0; iii < current_trackers_size; ++iii) {
-			auto index = current_trackers[iii];
+		for (TrackedDeviceIndex_t index: current_trackers) {
 			Update(index, just_connected);
 		}
+		// for (unsigned int iii = 0; iii < current_trackers_size; ++iii) {
+		// 	auto index = current_trackers[iii];
+			
+		// }
 	}
 
 	std::optional<InputDigitalActionData_t> HandleDigitalActionBool(VRActionHandle_t action_handle, std::optional<const char *> server_name = std::nullopt) {
