@@ -696,7 +696,9 @@ int main(int argc, char* argv[]) {
 		std::chrono::high_resolution_clock::now().time_since_epoch()
 	);
 
-	bool actions_loaded = false;
+	//bool actions_loaded = false;
+
+	bool overlay_was_open = false;
 
 	// event loop
 	while (!should_exit) {
@@ -710,27 +712,27 @@ int main(int argc, char* argv[]) {
 				return 0;
 
 			// TODO: add more events, or remove some events?
-			case VREvent_TrackedDeviceActivated:
-			case VREvent_TrackedDeviceDeactivated:
-			case VREvent_TrackedDeviceRoleChanged:
-			case VREvent_TrackedDeviceUpdated:
-			case VREvent_DashboardDeactivated:
+			// case VREvent_TrackedDeviceActivated:
+			// case VREvent_TrackedDeviceDeactivated:
+			// case VREvent_TrackedDeviceRoleChanged:
+			// case VREvent_TrackedDeviceUpdated:
+			// case VREvent_DashboardDeactivated:
 				// trackers.Detect(just_connected);
-				break;
+				// break;
 
-			case VREvent_Input_BindingLoadSuccessful:
-				if (!actions_loaded) {
-					VRInput()->UpdateActionState(&trackers.actionSet, sizeof(VRActiveActionSet_t), 1);
-				}
-				break;
+			// case VREvent_Input_BindingLoadSuccessful:
+			// 	if (!actions_loaded) {
+			// 		VRInput()->UpdateActionState(&trackers.actionSet, sizeof(VRActiveActionSet_t), 1);
+			// 	}
+			// 	break;
 
-			case VREvent_ActionBindingReloaded:
-				actions_loaded = true;
-				//fmt::print("Actions locked and loaded!\n");
-				break;
+			// case VREvent_ActionBindingReloaded:
+			// 	actions_loaded = true;
+			// 	//fmt::print("Actions locked and loaded!\n");
+			// 	break;
 
 			default:
-				// fmt::print("Unhandled event: {}({})\n", system->GetEventTypeNameFromEnum((EVREventType)event.eventType), event.eventType);
+				//fmt::print("Unhandled event: {}({})\n", system->GetEventTypeNameFromEnum((EVREventType)event.eventType), event.eventType);
 				// I'm not relying on events to actually trigger anything right now, so don't bother printing anything.
 				break;
 			}
@@ -740,16 +742,27 @@ int main(int argc, char* argv[]) {
 		// TODO: I don't think there are any messages from the server that we care about at the moment, but let's make sure to not let the pipe fill up.
 		bridge->getNextMessage(recievedMessage);
 
-		if (actions_loaded) {
+		// if (actions_loaded) {
 			// TODO: don't do this every loop, we really shouldn't need to.
-			trackers.Detect(just_connected);
+			if (VROverlay()->IsDashboardVisible()) {
+				if (!overlay_was_open) {
+					fmt::print("Dashboard open, pausing detection.\n");
+				}
+				overlay_was_open = true;
+			} else {
+				if (overlay_was_open) {
+					fmt::print("Dashboard closed, re-enabling tracker detection.\n");
+				}
+				overlay_was_open = false;
+				trackers.Detect(just_connected);
+			}
 
 			// TODO: rename these actions as appropriate, perhaps log them?
 			trackers.HandleDigitalActionBool(calibration_action, { "calibrate" });
 			trackers.HandleDigitalActionBool(confirm_action, { "Confirm" });
 
 			trackers.Tick(just_connected);
-		}
+		// }
 
 		next_tick += tick_ns;
 
