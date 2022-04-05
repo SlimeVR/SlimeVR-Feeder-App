@@ -24,7 +24,7 @@ source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "Header Files" FILES 
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "Source Files" FILES ${SOURCES})
 
 add_custom_command(
-    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/version.h"
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/version.h" always_run
     COMMAND ${CMAKE_COMMAND}
         -Dlocal_dir="${CMAKE_CURRENT_SOURCE_DIR}"
         -Doutput_dir="${CMAKE_CURRENT_BINARY_DIR}"
