@@ -220,9 +220,9 @@ private:
 		return GetOpenVRString(get_prop);
 	}
 
-	std::optional<std::string> GetLocalizedName(VRInputValueHandle_t handle) {
+	std::optional<std::string> GetLocalizedName(VRInputValueHandle_t handle, EVRInputStringBits flags) {
 		std::string name = std::string(100, '\0');
-		EVRInputError input_error = VRInput()->GetOriginLocalizedName(handle, name.data(), 100, EVRInputStringBits::VRInputString_Hand | EVRInputStringBits::VRInputString_ControllerType);
+		EVRInputError input_error = VRInput()->GetOriginLocalizedName(handle, name.data(), 100, flags | EVRInputStringBits::VRInputString_ControllerType);
 
 		if (input_error != VRInputError_None && input_error != VRInputError_BufferTooSmall) {
 			if (input_error != VRInputError_None) {
@@ -478,7 +478,14 @@ public:
 
 				auto index = trackedDeviceIndex.value();
 
-				auto name = GetLocalizedName(pose.activeOrigin);
+				// TODO: I feel like this 'only left+right hand' thing is going to bite us in the ass later with things that aren't index/vive trackers.
+				// oh well.
+				auto name = GetLocalizedName(
+					pose.activeOrigin,
+					(jjj == (int)BodyPosition::LeftHand || jjj == (int)BodyPosition::RightHand)
+						? EVRInputStringBits::VRInputString_Hand
+						: (EVRInputStringBits)0
+				);
 				if (name.has_value()) {
 					tracker_info[index].name = name.value();
 				}
@@ -513,10 +520,6 @@ public:
 		for (TrackedDeviceIndex_t index: current_trackers) {
 			Update(index, just_connected);
 		}
-		// for (unsigned int iii = 0; iii < current_trackers_size; ++iii) {
-		// 	auto index = current_trackers[iii];
-			
-		// }
 	}
 
 	std::optional<InputDigitalActionData_t> HandleDigitalActionBool(VRActionHandle_t action_handle, std::optional<const char *> server_name = std::nullopt) {
@@ -696,8 +699,6 @@ int main(int argc, char* argv[]) {
 		std::chrono::high_resolution_clock::now().time_since_epoch()
 	);
 
-	//bool actions_loaded = false;
-
 	bool overlay_was_open = false;
 
 	// event loop
@@ -720,17 +721,6 @@ int main(int argc, char* argv[]) {
 				// trackers.Detect(just_connected);
 				// break;
 
-			// case VREvent_Input_BindingLoadSuccessful:
-			// 	if (!actions_loaded) {
-			// 		VRInput()->UpdateActionState(&trackers.actionSet, sizeof(VRActiveActionSet_t), 1);
-			// 	}
-			// 	break;
-
-			// case VREvent_ActionBindingReloaded:
-			// 	actions_loaded = true;
-			// 	//fmt::print("Actions locked and loaded!\n");
-			// 	break;
-
 			default:
 				//fmt::print("Unhandled event: {}({})\n", system->GetEventTypeNameFromEnum((EVREventType)event.eventType), event.eventType);
 				// I'm not relying on events to actually trigger anything right now, so don't bother printing anything.
@@ -742,27 +732,28 @@ int main(int argc, char* argv[]) {
 		// TODO: I don't think there are any messages from the server that we care about at the moment, but let's make sure to not let the pipe fill up.
 		bridge->getNextMessage(recievedMessage);
 
-		// if (actions_loaded) {
-			// TODO: don't do this every loop, we really shouldn't need to.
-			if (VROverlay()->IsDashboardVisible()) {
-				if (!overlay_was_open) {
-					fmt::print("Dashboard open, pausing detection.\n");
-				}
-				overlay_was_open = true;
-			} else {
-				if (overlay_was_open) {
-					fmt::print("Dashboard closed, re-enabling tracker detection.\n");
-				}
-				overlay_was_open = false;
-				trackers.Detect(just_connected);
+		// TODO: don't do this every loop, we really shouldn't need to.
+		if (VROverlay()->IsDashboardVisible()) {
+			if (!overlay_was_open) {
+				fmt::print("Dashboard open, pausing detection.\n");
 			}
+			overlay_was_open = true;
 
-			// TODO: rename these actions as appropriate, perhaps log them?
-			trackers.HandleDigitalActionBool(calibration_action, { "calibrate" });
-			trackers.HandleDigitalActionBool(confirm_action, { "Confirm" });
+			// we should still be updating the action state, to get DigitalActions while the dashboard is open.
+			VRInput()->UpdateActionState(&trackers.actionSet, sizeof(VRActiveActionSet_t), 1);
+		} else {
+			if (overlay_was_open) {
+				fmt::print("Dashboard closed, re-enabling tracker detection.\n");
+			}
+			overlay_was_open = false;
+			trackers.Detect(just_connected);
+		}
 
-			trackers.Tick(just_connected);
-		// }
+		// TODO: rename these actions as appropriate, perhaps log them?
+		trackers.HandleDigitalActionBool(calibration_action, { "calibrate" });
+		trackers.HandleDigitalActionBool(confirm_action, { "Confirm" });
+
+		trackers.Tick(just_connected);
 
 		next_tick += tick_ns;
 
