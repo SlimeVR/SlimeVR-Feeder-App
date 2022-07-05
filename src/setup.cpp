@@ -3,8 +3,8 @@
 #include <memory>
 #include "pathtools_excerpt.h"
 
-static constexpr char *rel_manifest_path = "./manifest.vrmanifest";
-static constexpr char *application_key = "slimevr.steamvr.feeder";
+static constexpr const char *rel_manifest_path = "./manifest.vrmanifest";
+static constexpr const char *application_key = "slimevr.steamvr.feeder";
 
 void shutdown_vr(vr::IVRSystem* _system) {
 	vr::VR_Shutdown();

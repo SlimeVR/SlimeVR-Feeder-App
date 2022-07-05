@@ -23,8 +23,8 @@
 using namespace vr;
 
 // TODO: Temp Path
-static constexpr char* actions_path = "./bindings/actions.json";
-static constexpr char* config_path = "./config.txt";
+static constexpr const char* actions_path = "./bindings/actions.json";
+static constexpr const char* config_path = "./config.txt";
 
 enum class BodyPosition {
 	Head = 0,
@@ -85,7 +85,7 @@ static constexpr SlimeVRPosition positionIDs[(int)BodyPosition::BodyPosition_Cou
 	SlimeVRPosition::Chest
 };
 
-static constexpr char* positionNames[(int)SlimeVRPosition::GenericController + 1] = {
+static constexpr const char* positionNames[(int)SlimeVRPosition::GenericController + 1] = {
 	"None",
 	"Waist",
 	"LeftFoot",
@@ -110,7 +110,7 @@ static constexpr char* positionNames[(int)SlimeVRPosition::GenericController + 1
 	"GenericController"
 };
 
-static constexpr char* actions[(int)BodyPosition::BodyPosition_Count] = {
+static constexpr const char* actions[(int)BodyPosition::BodyPosition_Count] = {
 	"/actions/main/in/head",
 	"/actions/main/in/left_hand",
 	"/actions/main/in/right_hand",

@@ -11,6 +11,8 @@ class SlimeVRBridge {
     public:
         SlimeVRBridge() {}
 
+        virtual ~SlimeVRBridge();
+
         BridgeStatus status;
 
         // returns true if the pipe has *just* (re-)connected

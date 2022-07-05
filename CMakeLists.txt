@@ -1,8 +1,9 @@
 cmake_minimum_required(VERSION 3.15)
 #set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg/scripts/buildsystems/vcpkg.cmake")
-include("${CMAKE_CURRENT_SOURCE_DIR}/vcpkg/scripts/buildsystems/vcpkg.cmake")
 
 project(SlimeVR-Feeder-App LANGUAGES CXX)
+
+include("${CMAKE_CURRENT_SOURCE_DIR}/vcpkg/scripts/buildsystems/vcpkg.cmake")
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 

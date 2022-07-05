@@ -16,4 +16,4 @@ vr::HmdQuaternion_t GetRotation(vr::HmdMatrix34_t matrix);
 //-----------------------------------------------------------------------------
 vr::HmdVector3_t GetPosition(vr::HmdMatrix34_t matrix);
 
-#endif MATRIX_UTILS
+#endif // MATRIX_UTILS
