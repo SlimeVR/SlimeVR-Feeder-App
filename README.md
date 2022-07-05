@@ -19,3 +19,6 @@ Alternatively, you can download the feeder app here: https://github.com/SlimeVR/
 
 ### Thanks
 This was largely based off of https://github.com/Omnifinity/OpenVR-Tracking-Example , even if the structure is different. Thanks, @Omnifinity.
+
+Rust setup was basically copy-pasted from https://github.com/XiangpengHao/cxx-cmake-example.
+Thanks, @XiangpengHao.

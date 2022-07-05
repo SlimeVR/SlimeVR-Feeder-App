@@ -13,9 +13,15 @@ find_package(Protobuf CONFIG REQUIRED)
 
 set(protos_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/protos)
 
+
+include_directories(${CMAKE_BINARY_DIR}/rust_part)
+include_directories(include)
+
+add_subdirectory(rust_part)
+
 # Project
-add_executable("${PROJECT_NAME}" "src/main.cpp" "src/pathtools_excerpt.cpp" "src/pathtools_excerpt.h" "src/matrix_utils.cpp" "src/matrix_utils.h" "src/bridge.cpp" "src/bridge.hpp" "src/setup.cpp" "src/setup.hpp" "ProtobufMessages.proto" "${CMAKE_CURRENT_BINARY_DIR}/version.h")
-target_link_libraries("${PROJECT_NAME}" PRIVATE "${OPENVR_LIB}" fmt::fmt protobuf::libprotobuf)
+add_executable("${PROJECT_NAME}" "src/main.cpp" "src/pathtools_excerpt.cpp" "src/pathtools_excerpt.h" "src/matrix_utils.cpp" "src/matrix_utils.h" "src/bridge.cpp" "src/bridge.hpp" "src/setup.cpp" "src/setup.hpp" "ProtobufMessages.proto" "${CMAKE_CURRENT_BINARY_DIR}/version.h" "src/cxx_test.cpp")
+target_link_libraries("${PROJECT_NAME}" PRIVATE "${OPENVR_LIB}" fmt::fmt protobuf::libprotobuf rust_part)
 protobuf_generate(TARGET "${PROJECT_NAME}" LANGUAGE cpp PROTOC_OUT_DIR ${protos_OUTPUT_DIR})
 target_include_directories("${PROJECT_NAME}" PUBLIC ${protos_OUTPUT_DIR} PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_compile_features("${PROJECT_NAME}" PRIVATE cxx_std_17)
