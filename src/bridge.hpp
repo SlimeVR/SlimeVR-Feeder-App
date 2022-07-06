@@ -11,7 +11,7 @@ class SlimeVRBridge {
     public:
         SlimeVRBridge() {}
 
-        virtual ~SlimeVRBridge();
+        virtual ~SlimeVRBridge() {};
 
         BridgeStatus status;
 
