@@ -5,6 +5,7 @@
         "fmt",
         "openvr",
         "protobuf",
-        "args"
+        "args",
+        "simdjson"
     ]
 }

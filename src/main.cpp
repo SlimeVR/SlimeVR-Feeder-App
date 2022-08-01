@@ -11,6 +11,7 @@
 #include <fmt/ostream.h>
 #include <iostream>
 #include <fstream>
+#include <simdjson.h>
 #include <args.hxx>
 
 #include "pathtools_excerpt.h"
@@ -156,6 +157,28 @@ VRActionHandle_t GetAction(const char* action_path) {
 	return handle;
 }
 
+class UniverseTranslation {
+	public:
+		// TODO: do we want to store this differently?
+		vr::HmdVector3_t translation;
+		float yaw;
+
+		static UniverseTranslation parse(simdjson::ondemand::object &obj) {
+			UniverseTranslation res;
+			int iii = 0;
+			for (auto component: obj["translation"]) {
+				if (iii > 2) {
+					break; // TODO: 4 components in a translation vector? should this be an error?
+				}
+				res.translation.v[iii] = component.get_double();
+				iii += 1;
+			}
+			res.yaw = obj["yaw"].get_double();
+
+			return res;
+		}
+};
+
 enum class TrackerState {
 	DISCONNECTED,
 	WAITING,
@@ -189,6 +212,7 @@ private:
 	SlimeVRBridge &bridge;
 public:
 	VRActiveActionSet_t actionSet;
+	std::optional<std::pair<uint64_t, UniverseTranslation>> current_universe = std::nullopt;
 private:
 	ETrackingUniverseOrigin universe;
 	VRActionHandle_t action_handles[(int)BodyPosition::BodyPosition_Count];
@@ -311,6 +335,36 @@ private:
 
 			HmdQuaternion_t new_rotation = GetRotation(pose.mDeviceToAbsoluteTracking);
 			HmdVector3_t new_position = GetPosition(pose.mDeviceToAbsoluteTracking);
+
+			if (current_universe.has_value()) {
+				auto trans = current_universe.value().second;
+				new_position.v[0] += trans.translation.v[0];
+				new_position.v[1] += trans.translation.v[1];
+				new_position.v[2] += trans.translation.v[2];
+
+				// rotate by quaternion w = cos(-trans.yaw / 2), x = 0, y = sin(-trans.yaw / 2), z = 0
+				auto tmp_w = cos(-trans.yaw / 2);
+				auto tmp_y = sin(-trans.yaw / 2);
+				auto new_w = tmp_w * new_rotation.w - tmp_y * new_rotation.y;
+				auto new_x = tmp_w * new_rotation.x + tmp_y * new_rotation.z;
+				auto new_y = tmp_w * new_rotation.y + tmp_y * new_rotation.w;
+				auto new_z = tmp_w * new_rotation.z - tmp_y * new_rotation.x;
+
+				new_rotation.w = new_w;
+				new_rotation.x = new_x;
+				new_rotation.y = new_y;
+				new_rotation.z = new_z;
+
+				// rotate point on the xz plane by -trans.yaw radians
+				// this is equivilant to the quaternion multiplication, after applying the double angle formula.
+				float tmp_sin = sin(-trans.yaw);
+				float tmp_cos = cos(-trans.yaw);
+				auto pos_x = new_position.v[0] * tmp_cos + new_position.v[2] * tmp_sin;
+				auto pos_z = new_position.v[0] * -tmp_sin + new_position.v[2] * tmp_cos;
+
+				new_position.v[0] = pos_x;
+				new_position.v[2] = pos_z;
+			}
 
 			// send our position message
 			messages::ProtobufMessage message;
@@ -536,6 +590,15 @@ public:
 
 				fmt::print("Sending {} action\n", server_name.value());
 
+				// TODO: check if this changes when playspaced (no reason why it shouldn't)
+				HmdMatrix34_t mat = VRSystem()->GetRawZeroPoseToStandingAbsoluteTrackingPose();
+				fmt::print(
+					"[ {}, {}, {}, {},\n  {}, {}, {}, {},\n  {}, {}, {}, {} ]",
+					mat.m[0][0], mat.m[0][1], mat.m[0][2], mat.m[0][3],
+					mat.m[1][0], mat.m[1][1], mat.m[1][2], mat.m[1][3],
+					mat.m[2][0], mat.m[2][1], mat.m[2][2], mat.m[2][3]
+				);
+
 				bridge.sendMessage(message);
 			}
 
@@ -591,26 +654,71 @@ void handle_signal(int num) {
 	}
 }
 
-static const std::unordered_map<std::string, ETrackingUniverseOrigin> universe_map {
-	{"seated", ETrackingUniverseOrigin::TrackingUniverseSeated},
-	{"standing", ETrackingUniverseOrigin::TrackingUniverseStanding},
-	{"raw", ETrackingUniverseOrigin::TrackingUniverseRawAndUncalibrated},
+static const std::unordered_map<std::string, std::pair<ETrackingUniverseOrigin, bool>> universe_map {
+	{"seated", {ETrackingUniverseOrigin::TrackingUniverseSeated, false}},
+	{"standing", {ETrackingUniverseOrigin::TrackingUniverseStanding, false}},
+	{"raw", {ETrackingUniverseOrigin::TrackingUniverseRawAndUncalibrated, false}},
+	{"static_standing", {ETrackingUniverseOrigin::TrackingUniverseRawAndUncalibrated, true}}
 };
-static constexpr ETrackingUniverseOrigin universe_default = ETrackingUniverseOrigin::TrackingUniverseRawAndUncalibrated;
+// default is static_standing
+static constexpr std::pair<ETrackingUniverseOrigin, bool> universe_default = {ETrackingUniverseOrigin::TrackingUniverseRawAndUncalibrated, true};
 
 // TEMP, cba to setup a proper header file.
 void test_lto();
 
+std::optional<UniverseTranslation> search_universe(simdjson::ondemand::parser &json_parser, uint64_t target) {
+    try {
+		uint32_t length = 0;
+		VRChaperoneSetup()->ExportLiveToBuffer(nullptr, &length);
+		auto json = simdjson::padded_string(length);
+		if (!VRChaperoneSetup()->ExportLiveToBuffer(json.data(), &length)) {
+			return std::nullopt;
+		}
+        
+        simdjson::ondemand::document doc = json_parser.iterate(json);
+
+        for (simdjson::ondemand::object uni: doc["universes"]) {
+            // TODO: universeID comes after the translation, would it be faster to unconditionally parse the translation?
+            auto elem = uni["universeID"];
+            uint64_t parsed_universe;
+            if (elem.is_integer()) {
+                parsed_universe = elem.get_uint64();
+            } else {
+                parsed_universe = elem.get_uint64_in_string();
+            }
+            if (parsed_universe == target) {
+                return UniverseTranslation::parse(uni["standing"].get_object().value());
+            }
+        }
+    } catch (simdjson::simdjson_error& e) {
+		fmt::print("Error parsing steamvr universes: {}\n", e.error());
+        return std::nullopt;
+    }
+
+    return std::nullopt;
+}
+
 int main(int argc, char* argv[]) {
 	GOOGLE_PROTOBUF_VERIFY_VERSION;
 
-	test_lto();
+	// test_lto();
 
 	args::ArgumentParser parser("Feeds controller/tracker data to SlimeVR Server.", "This program also parses arguments from a config file \"config.txt\" in the same directory as the executable. It is formatted as one line per option, and ignores characters on a line after a '#' character. Options passed on the command line are parsed after those read from the config file, and thus override options read from the config file.");
 	args::HelpFlag help(parser, "help", "Display this help menu", {'h', "help"});
 	args::CompletionFlag completion(parser, {"complete"});
 
-	args::MapFlag<std::string, ETrackingUniverseOrigin> universe(parser, "universe", "Tracking Universe. Possible values:\n  raw: raw/uncalibrated space sent by driver (current default)\n  seated: seated universe\n  standing: standing universe", {"universe"}, universe_map, universe_default);
+	args::MapFlag<std::string, std::pair<ETrackingUniverseOrigin, bool>> universe(
+		parser,
+		"universe",
+		"Tracking Universe. Possible values:\n"
+		"  raw: raw/uncalibrated space\n"
+		"  seated: seated universe\n"
+		"  standing: standing universe\n"
+		"  static_standing: standing universe unaffected by playspace movement (this matches slimevr driver, default)",
+		{"universe"},
+		universe_map,
+		universe_default
+	);
 	args::ValueFlag<uint32_t> tps(parser, "tps", "Ticks per second. i.e. the number of times per second to send tracking information to slimevr server. Default is 100.", {"tps"}, 100);
 
 	args::Group setup_group(parser, "Setup options", args::Group::Validators::AtMostOne);
@@ -687,7 +795,9 @@ int main(int argc, char* argv[]) {
 	}
 
 	auto bridge = SlimeVRBridge::factory();
-	std::optional<Trackers> maybe_trackers = Trackers::Create(*bridge, universe.Get());
+	auto tracking_universe = universe.Get().first;
+	bool use_vrchaperone = universe.Get().second;
+	std::optional<Trackers> maybe_trackers = Trackers::Create(*bridge, tracking_universe);
 	if (!maybe_trackers.has_value()) {
 		return EXIT_FAILURE;
 	}
@@ -705,6 +815,8 @@ int main(int argc, char* argv[]) {
 	);
 
 	bool overlay_was_open = false;
+
+	auto json_parser = simdjson::ondemand::parser();
 
 	// event loop
 	while (!should_exit) {
@@ -736,6 +848,17 @@ int main(int argc, char* argv[]) {
 		messages::ProtobufMessage recievedMessage;
 		// TODO: I don't think there are any messages from the server that we care about at the moment, but let's make sure to not let the pipe fill up.
 		bridge->getNextMessage(recievedMessage);
+
+		// TODO: are there events we should be listening to in order to fire this?
+		uint64_t universe = VRSystem()->GetUint64TrackedDeviceProperty(0, Prop_CurrentUniverseId_Uint64);
+        if (use_vrchaperone && (!trackers.current_universe.has_value() || trackers.current_universe.value().first != universe)) {
+            auto res = search_universe(json_parser, universe);
+            if (res.has_value()) {
+                trackers.current_universe.emplace(universe, res.value());
+            } else {
+				fmt::print("Failed to find current universe!");
+            }
+        }
 
 		// TODO: don't do this every loop, we really shouldn't need to.
 		if (VROverlay()->IsDashboardVisible()) {
