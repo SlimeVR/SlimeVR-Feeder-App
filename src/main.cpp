@@ -590,15 +590,6 @@ public:
 
 				fmt::print("Sending {} action\n", server_name.value());
 
-				// TODO: check if this changes when playspaced (no reason why it shouldn't)
-				HmdMatrix34_t mat = VRSystem()->GetRawZeroPoseToStandingAbsoluteTrackingPose();
-				fmt::print(
-					"[ {}, {}, {}, {},\n  {}, {}, {}, {},\n  {}, {}, {}, {} ]",
-					mat.m[0][0], mat.m[0][1], mat.m[0][2], mat.m[0][3],
-					mat.m[1][0], mat.m[1][1], mat.m[1][2], mat.m[1][3],
-					mat.m[2][0], mat.m[2][1], mat.m[2][2], mat.m[2][3]
-				);
-
 				bridge.sendMessage(message);
 			}
 
@@ -667,35 +658,45 @@ static constexpr std::pair<ETrackingUniverseOrigin, bool> universe_default = {ET
 void test_lto();
 
 std::optional<UniverseTranslation> search_universe(simdjson::ondemand::parser &json_parser, uint64_t target) {
-    try {
-		uint32_t length = 0;
-		VRChaperoneSetup()->ExportLiveToBuffer(nullptr, &length);
-		auto json = simdjson::padded_string(length);
-		if (!VRChaperoneSetup()->ExportLiveToBuffer(json.data(), &length)) {
-			return std::nullopt;
+	uint32_t length = 0;
+	VRChaperoneSetup()->ExportLiveToBuffer(nullptr, &length);
+
+	// compile time check to ensure we're being sane, otherwise this would be a buffer overrun!
+	static_assert(simdjson::SIMDJSON_PADDING >= 1, "simdjson doesn't specify enough padding for a trailing null byte!");
+	// i'd say something about caching a padded string to avoid allocation
+	// but if it's not *exactly* the same size we'd need to allocate anyway
+	// because simdjson doesn't allow modifying the valid length.
+	auto json = simdjson::padded_string(length - 1);
+
+	if (!VRChaperoneSetup()->ExportLiveToBuffer(json.data(), &length)) {
+		return std::nullopt;
+	}
+
+	simdjson::ondemand::document doc;
+	try {
+		doc = json_parser.iterate(json);
+
+		for (simdjson::ondemand::object uni: doc["universes"]) {
+			// TODO: universeID comes after the translation, would it be faster to unconditionally parse the translation?
+			simdjson::ondemand::value elem = uni["universeID"];
+			
+			uint64_t parsed_universe;
+			auto is_integer = elem.is_integer();
+			if (!is_integer.error() && is_integer.value_unsafe()) {
+				parsed_universe = elem.get_uint64();
+			} else {
+				parsed_universe = elem.get_uint64_in_string();
+			}
+			if (parsed_universe == target) {
+				return UniverseTranslation::parse(uni["standing"].get_object().value());
+			}
 		}
-        
-        simdjson::ondemand::document doc = json_parser.iterate(json);
+	} catch (simdjson::simdjson_error& e) {
+		fmt::print("Error while parsing steamvr universes: {}\nraw_token: |{}|\n", e.error(), doc.raw_json_token());
+		return std::nullopt;
+	}
 
-        for (simdjson::ondemand::object uni: doc["universes"]) {
-            // TODO: universeID comes after the translation, would it be faster to unconditionally parse the translation?
-            auto elem = uni["universeID"];
-            uint64_t parsed_universe;
-            if (elem.is_integer()) {
-                parsed_universe = elem.get_uint64();
-            } else {
-                parsed_universe = elem.get_uint64_in_string();
-            }
-            if (parsed_universe == target) {
-                return UniverseTranslation::parse(uni["standing"].get_object().value());
-            }
-        }
-    } catch (simdjson::simdjson_error& e) {
-		fmt::print("Error parsing steamvr universes: {}\n", e.error());
-        return std::nullopt;
-    }
-
-    return std::nullopt;
+	return std::nullopt;
 }
 
 int main(int argc, char* argv[]) {
@@ -851,14 +852,12 @@ int main(int argc, char* argv[]) {
 
 		// TODO: are there events we should be listening to in order to fire this?
 		uint64_t universe = VRSystem()->GetUint64TrackedDeviceProperty(0, Prop_CurrentUniverseId_Uint64);
-        if (use_vrchaperone && (!trackers.current_universe.has_value() || trackers.current_universe.value().first != universe)) {
-            auto res = search_universe(json_parser, universe);
-            if (res.has_value()) {
-                trackers.current_universe.emplace(universe, res.value());
-            } else {
-				fmt::print("Failed to find current universe!");
-            }
-        }
+		if (use_vrchaperone && (!trackers.current_universe.has_value() || trackers.current_universe.value().first != universe)) {
+			auto res = search_universe(json_parser, universe);
+			if (res.has_value()) {
+				trackers.current_universe.emplace(universe, res.value());
+			}
+		}
 
 		// TODO: don't do this every loop, we really shouldn't need to.
 		if (VROverlay()->IsDashboardVisible()) {
