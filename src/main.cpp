@@ -652,7 +652,7 @@ static const std::unordered_map<std::string, std::pair<ETrackingUniverseOrigin, 
 	{"static_standing", {ETrackingUniverseOrigin::TrackingUniverseRawAndUncalibrated, true}}
 };
 // default is static_standing
-static constexpr std::pair<ETrackingUniverseOrigin, bool> universe_default = {ETrackingUniverseOrigin::TrackingUniverseRawAndUncalibrated, true};
+static constexpr std::pair<ETrackingUniverseOrigin, bool> universe_default = {ETrackingUniverseOrigin::TrackingUniverseRawAndUncalibrated, false};
 
 // TEMP, cba to setup a proper header file.
 void test_lto();
@@ -712,10 +712,10 @@ int main(int argc, char* argv[]) {
 		parser,
 		"universe",
 		"Tracking Universe. Possible values:\n"
-		"  raw: raw/uncalibrated space\n"
+		"  raw: raw/uncalibrated space (current default)\n"
 		"  seated: seated universe\n"
 		"  standing: standing universe\n"
-		"  static_standing: standing universe unaffected by playspace movement (this matches slimevr driver, default)",
+		"  static_standing: standing universe unaffected by playspace movement",
 		{"universe"},
 		universe_map,
 		universe_default
