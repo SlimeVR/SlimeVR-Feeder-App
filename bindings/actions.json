@@ -138,12 +138,12 @@
     {
       "name": "/actions/main/in/request_calibration",
       "type": "boolean",
-      "requirement": "suggested"
+      "requirement": "optional"
     },
     {
-      "name": "/actions/main/in/confirm",
+      "name": "/actions/main/in/fast_reset",
       "type": "boolean",
-      "requirement": "suggested"
+      "requirement": "optional"
     }
   ],
   "action_sets": [

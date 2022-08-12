@@ -806,7 +806,7 @@ int main(int argc, char* argv[]) {
 	Trackers trackers = maybe_trackers.value();
 
 	VRActionHandle_t calibration_action = GetAction("/actions/main/in/request_calibration");
-	VRActionHandle_t confirm_action = GetAction("/actions/main/in/confirm");
+	VRActionHandle_t fast_reset_action = GetAction("/actions/main/in/fast_reset");
 
 	//trackers.Detect(false);
 
@@ -878,7 +878,7 @@ int main(int argc, char* argv[]) {
 
 		// TODO: rename these actions as appropriate, perhaps log them?
 		trackers.HandleDigitalActionBool(calibration_action, { "calibrate" });
-		trackers.HandleDigitalActionBool(confirm_action, { "Confirm" });
+		trackers.HandleDigitalActionBool(fast_reset_action, { "fast reset" });
 
 		trackers.Tick(just_connected);
 
