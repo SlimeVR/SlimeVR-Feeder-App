@@ -877,8 +877,8 @@ int main(int argc, char* argv[]) {
 		}
 
 		// TODO: rename these actions as appropriate, perhaps log them?
-		trackers.HandleDigitalActionBool(calibration_action, { "calibrate" });
-		trackers.HandleDigitalActionBool(fast_reset_action, { "fast reset" });
+		trackers.HandleDigitalActionBool(calibration_action, { "reset" });
+		trackers.HandleDigitalActionBool(fast_reset_action, { "fast_reset" });
 
 		trackers.Tick(just_connected);
 

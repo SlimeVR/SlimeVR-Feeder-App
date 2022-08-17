@@ -167,7 +167,9 @@
       "/actions/main/in/right_knee": "Right Knee",
       "/actions/main/in/waist": "Waist",
       "/actions/main/in/foot_left": "Left Foot",
-      "/actions/main/in/foot_right": "Right Foot"
+      "/actions/main/in/foot_right": "Right Foot",
+      "/actions/main/in/request_calibration": "Reset",
+      "/actions/main/in/fast_reset": "Fast Reset"
     }
   ]
 }
