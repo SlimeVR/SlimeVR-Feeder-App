@@ -43,10 +43,12 @@ jobs:
       - name: CMake+vcpkg configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
         shell: cmd
+        if: runner.os == 'Windows'
 
       - name: Build
         run: cmake --build build --config RelWithDebInfo
         shell: cmd
+        if: runner.os == 'Windows'
 
       # - name: List $RUNNER_WORKSPACE after build
       #   run: find $RUNNER_WORKSPACE
@@ -55,6 +57,19 @@ jobs:
       - name: Package
         run: cmake --build build --target package --config RelWithDebInfo
         shell: cmd
+        if: runner.os == 'Windows'
+
+      - name: CMake + vcpkg configure (Linux)
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
+        if: runner.os == 'Linux'
+
+      - name: Build (Linux)
+        run: cmake --build build --config RelWithDebInfo
+        if: runner.os == 'Linux'
+
+      - name: Package (Linux)
+        run: cmake --build build --target package --config RelWithDebInfo
+        if: runner.os == 'Linux'
 
       - name: Get package path for Artifact
         run: echo "artifactPath=$(realpath build/_CPack_Packages/*/ZIP/SlimeVR-Feeder-App-*/ --relative-to .)" >> $GITHUB_ENV
