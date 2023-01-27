@@ -13,7 +13,7 @@ find_package(Protobuf CONFIG REQUIRED)
 find_package(simdjson CONFIG REQUIRED)
 
 set(protos_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/protos)
-
+file(MAKE_DIRECTORY "${protos_OUTPUT_DIR}")
 
 include_directories(${CMAKE_BINARY_DIR}/rust_part)
 include_directories(include)
