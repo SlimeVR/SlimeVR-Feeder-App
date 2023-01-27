@@ -2,6 +2,7 @@
 #include <vector>
 #include <fmt/core.h>
 #include <fmt/ostream.h>
+#include <optional>
 #include "bridge.hpp"
 
 #if defined(_WIN32)
@@ -86,6 +87,137 @@ class NamedPipeBridge final: public SlimeVRBridge {
         virtual void update() final override {}
 };
 
+#else
+#include "unix_sockets.hpp"
+
+class UnixSocketBridge final : public SlimeVRBridge {
+private:
+    static constexpr std::string_view SOCKET_NAME = "/tmp/SlimeVRInput"
+    inline constexpr int HEADER_SIZE = 4;
+    inline constexpr int BUFFER_SIZE = 1024;
+    using ByteBuffer = std::array<uint8_t, BUFFER_SIZE>;
+
+    ByteBuffer byteBuffer;
+    BasicLocalClient client;
+
+    /// @return iterator after header
+    template <typename TBufIt>
+    std::optional<TBufIt> WriteHeader(TBufIt bufBegin, int bufSize, int msgSize) {
+        const int totalSize = msgSize + HEADER_SIZE; // include header bytes in total size
+        if (bufSize < totalSize) return std::nullopt; // header won't fit
+
+        const auto size = static_cast<uint32_t>(totalSize);
+        TBufIt it = bufBegin;
+        *(it++) = static_cast<uint8_t>(size);
+        *(it++) = static_cast<uint8_t>(size >> 8U);
+        *(it++) = static_cast<uint8_t>(size >> 16U);
+        *(it++) = static_cast<uint8_t>(size >> 24U);
+        return it;
+    }
+    /// @return iterator after header
+    template <typename TBufIt>
+    std::optional<TBufIt> ReadHeader(TBufIt bufBegin, int numBytesRecv, int& outMsgSize) {
+        if (numBytesRecv < HEADER_SIZE) return std::nullopt; // header won't fit
+
+        uint32_t size = 0;
+        TBufIt it = bufBegin;
+        size = static_cast<uint32_t>(*(it++));
+        size |= static_cast<uint32_t>(*(it++)) << 8U;
+        size |= static_cast<uint32_t>(*(it++)) << 16U;
+        size |= static_cast<uint32_t>(*(it++)) << 24U;
+
+        const auto totalSize = static_cast<int>(size);
+        if (totalSize < HEADER_SIZE) return std::nullopt;
+        outMsgSize = totalSize - HEADER_SIZE;
+        return it;
+    }
+
+    void connect() final {
+        if (!client.IsOpen()) {
+            client.Open(SOCKET_NAME);
+        }
+    }
+    void reset() final {
+        client.Close();
+    }
+    void update() final {
+        client.UpdateOnce();
+    }
+
+public:
+    bool getNextMessage(messages::ProtobufMessage &msg) final {
+        if (!client.IsOpen()) return false;
+
+        int bytesRecv = 0;
+        try {
+            bytesRecv = client.RecvOnce(byteBuffer.begin(), HEADER_SIZE);
+        } catch (const std::exception& e) {
+            client.Close();
+            fmt::print("bridge send error: {}\n", e.what());
+            return false;
+        }
+        if (bytesRecv == 0) return false; // no message waiting
+
+        int msgSize = 0;
+        const std::optional msgBeginIt = ReadHeader(byteBuffer.begin(), bytesRecv, msgSize);
+        if (!msgBeginIt) {
+            fmt::print("bridge recv error: invalid message header or size\n");
+            return false;
+        }
+        if (msgSize <= 0) {
+            fmt::print("bridge recv error: empty message\n");
+            return false;
+        }
+        try {
+            if (!client.RecvAll(*msgBeginIt, msgSize)) {
+                fmt::print("bridge recv error: client closed\n");
+                return false;
+            }
+        } catch (const std::exception& e) {
+            client.Close();
+            fmt::print("bridge send error: {}\n", e.what());
+            return false;
+        }
+        if (!message.ParseFromArray(&(**msgBeginIt), msgSize)) {
+            fmt::print("bridge recv error: failed to parse\n");
+            return false;
+        }
+
+        return true;
+    }
+    bool sendMessage(messages::ProtobufMessage &msg) final {
+        if (!client.IsOpen()) return false;
+        const auto bufBegin = byteBuffer.begin();
+        const auto bufferSize = static_cast<int>(std::distance(bufBegin, byteBuffer.end()));
+        const auto msgSize = static_cast<int>(message.ByteSizeLong());
+        const std::optional msgBeginIt = WriteHeader(bufBegin, bufferSize, msgSize);
+        if (!msgBeginIt) {
+            fmt::print("bridge send error: failed to write header\n");
+            return false;
+        }
+        if (!message.SerializeToArray(&(**msgBeginIt), msgSize)) {
+            fmt::print("bridge send error: failed to serialize\n");
+            return false;
+        }
+        int bytesToSend = static_cast<int>(std::distance(bufBegin, *msgBeginIt + msgSize));
+        if (bytesToSend <= 0) {
+            fmt::print("bridge send error: empty message\n");
+            return false;
+        }
+        if (bytesToSend > bufferSize) {
+            fmt::print("bridge send error: message too big\n");
+            return false;
+        }
+        try {
+            return client.Send(bufBegin, bytesToSend);
+        } catch (const std::exception& e) {
+            client.Close();
+            fmt::print("bridge send error: {}\n" + e.what());
+            return false;
+        }
+    }
+};
+
 #endif
 
 bool SlimeVRBridge::runFrame() {
@@ -111,6 +243,8 @@ bool SlimeVRBridge::runFrame() {
 std::unique_ptr<SlimeVRBridge> SlimeVRBridge::factory() {
 #if defined(_WIN32)
     return std::make_unique<NamedPipeBridge>();
+#elif defined(__linux__)
+    return std::make_unique<UnixSocketBridge>();
 #else
     #error Unsupported platform
 #endif
