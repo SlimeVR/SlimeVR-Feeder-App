@@ -16,4 +16,5 @@ else()
     message(STATUS "git not found")
 endif()
 
+message(STATUS "copying ${local_dir}/cmake/version.h.in to ${output_dir}/version.h")
 configure_file("${local_dir}/cmake/version.h.in" "${output_dir}/version.h" @ONLY)
