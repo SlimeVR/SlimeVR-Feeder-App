@@ -487,7 +487,7 @@ public:
 			auto driver = this->GetStringProp(index, ETrackedDeviceProperty::Prop_TrackingSystemName_String);
 			auto info = tracker_info + index;
 
-			info->is_slimevr = (driver == "SlimeVR");
+			info->is_slimevr = (driver == "SlimeVR" || driver == "slimevr");
 
 			// only write values once, to avoid overwriting good values later.
 			if (info->name == "") {
