@@ -163,7 +163,7 @@ class UniverseTranslation {
 		vr::HmdVector3_t translation;
 		float yaw;
 
-		static UniverseTranslation parse(simdjson::ondemand::object &obj) {
+		static UniverseTranslation parse(simdjson::ondemand::object &&obj) {
 			UniverseTranslation res;
 			int iii = 0;
 			for (auto component: obj["translation"]) {
