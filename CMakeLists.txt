@@ -21,7 +21,7 @@ include_directories(include)
 add_subdirectory(rust_part)
 
 # Project
-add_executable("${PROJECT_NAME}" "src/main.cpp" "src/pathtools_excerpt.cpp" "src/pathtools_excerpt.h" "src/matrix_utils.cpp" "src/matrix_utils.h" "src/bridge.cpp" "src/bridge.hpp" "src/setup.cpp" "src/setup.hpp" "ProtobufMessages.proto" "${CMAKE_CURRENT_BINARY_DIR}/version.h" "src/cxx_test.cpp")
+add_executable("${PROJECT_NAME}" "src/main.cpp" "src/pathtools_excerpt.cpp" "src/pathtools_excerpt.h" "src/matrix_utils.cpp" "src/matrix_utils.h" "src/bridge.cpp" "src/bridge.hpp" "src/setup.cpp" "src/setup.hpp" "ProtobufMessages.proto" "src/cxx_test.cpp")
 target_link_libraries("${PROJECT_NAME}" PRIVATE "${OPENVR_LIB}" fmt::fmt protobuf::libprotobuf simdjson::simdjson rust_part)
 protobuf_generate(TARGET "${PROJECT_NAME}" LANGUAGE cpp PROTOC_OUT_DIR ${protos_OUTPUT_DIR})
 target_include_directories("${PROJECT_NAME}" PUBLIC ${protos_OUTPUT_DIR} PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
@@ -31,13 +31,14 @@ target_compile_features("${PROJECT_NAME}" PRIVATE cxx_std_17)
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "Header Files" FILES ${HEADERS})
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" PREFIX "Source Files" FILES ${SOURCES})
 
-add_custom_command(
-    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/version.h" always_run
+add_custom_target(
+    version
     COMMAND ${CMAKE_COMMAND}
         -Dlocal_dir="${CMAKE_CURRENT_SOURCE_DIR}"
         -Doutput_dir="${CMAKE_CURRENT_BINARY_DIR}"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/gitversion.cmake"
 )
+add_dependencies("${PROJECT_NAME}" version)
 
 install(DIRECTORY "${PROJECT_SOURCE_DIR}/bindings"
     DESTINATION "."
