@@ -92,9 +92,9 @@ class NamedPipeBridge final: public SlimeVRBridge {
 
 class UnixSocketBridge final : public SlimeVRBridge {
 private:
-    static constexpr std::string_view SOCKET_NAME = "/tmp/SlimeVRInput"
-    inline constexpr int HEADER_SIZE = 4;
-    inline constexpr int BUFFER_SIZE = 1024;
+    static constexpr std::string_view SOCKET_NAME = "/tmp/SlimeVRInput";
+    inline static constexpr int HEADER_SIZE = 4;
+    inline static constexpr int BUFFER_SIZE = 1024;
     using ByteBuffer = std::array<uint8_t, BUFFER_SIZE>;
 
     ByteBuffer byteBuffer;
@@ -178,7 +178,7 @@ public:
             fmt::print("bridge send error: {}\n", e.what());
             return false;
         }
-        if (!message.ParseFromArray(&(**msgBeginIt), msgSize)) {
+        if (!msg.ParseFromArray(&(**msgBeginIt), msgSize)) {
             fmt::print("bridge recv error: failed to parse\n");
             return false;
         }
@@ -189,13 +189,13 @@ public:
         if (!client.IsOpen()) return false;
         const auto bufBegin = byteBuffer.begin();
         const auto bufferSize = static_cast<int>(std::distance(bufBegin, byteBuffer.end()));
-        const auto msgSize = static_cast<int>(message.ByteSizeLong());
+        const auto msgSize = static_cast<int>(msg.ByteSizeLong());
         const std::optional msgBeginIt = WriteHeader(bufBegin, bufferSize, msgSize);
         if (!msgBeginIt) {
             fmt::print("bridge send error: failed to write header\n");
             return false;
         }
-        if (!message.SerializeToArray(&(**msgBeginIt), msgSize)) {
+        if (!msg.SerializeToArray(&(**msgBeginIt), msgSize)) {
             fmt::print("bridge send error: failed to serialize\n");
             return false;
         }
@@ -212,7 +212,7 @@ public:
             return client.Send(bufBegin, bytesToSend);
         } catch (const std::exception& e) {
             client.Close();
-            fmt::print("bridge send error: {}\n" + e.what());
+            fmt::print("bridge send error: {}\n", e.what());
             return false;
         }
     }
