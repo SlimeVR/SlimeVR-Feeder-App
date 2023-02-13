@@ -90,9 +90,15 @@ class NamedPipeBridge final: public SlimeVRBridge {
 #else
 #include "unix_sockets.hpp"
 
+#include <cstdlib>
+#include <filesystem>
+
+namespace fs = std::filesystem;
+
 class UnixSocketBridge final : public SlimeVRBridge {
 private:
-    static constexpr std::string_view SOCKET_NAME = "/tmp/SlimeVRInput";
+    static constexpr std::string_view TMP_DIR = "/tmp";
+    static constexpr std::string_view SOCKET_NAME = "SlimeVRInput";
     inline static constexpr int HEADER_SIZE = 4;
     inline static constexpr int BUFFER_SIZE = 1024;
     using ByteBuffer = std::array<uint8_t, BUFFER_SIZE>;
@@ -134,7 +140,13 @@ private:
 
     void connect() final {
         if (!client.IsOpen()) {
-            client.Open(SOCKET_NAME);
+            // TODO: do this once in the constructor or something
+            if (const char* ptr = std::getenv("XDG_RUNTIME_DIR")) {
+                const fs::path xdg_runtime = ptr;
+                client.Open((xdg_runtime / SOCKET_NAME).native());
+            } else {
+                client.Open((fs::path(TMP_DIR) / SOCKET_NAME).native());
+            }
         }
     }
     void reset() final {
