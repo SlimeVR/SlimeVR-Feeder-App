@@ -468,13 +468,16 @@ private:
 public:
 	static std::optional<Trackers> Create(SlimeVRBridge &bridge, ETrackingUniverseOrigin universe);
 
-	void Detect(bool just_connected) {
+	void Detect(bool just_connected, bool enable_hmd) {
 		current_trackers.clear();
 		uint32_t all_trackers_size = 0;
 		TrackedDeviceIndex_t all_trackers[k_unMaxTrackedDeviceCount];
 
-		// detect everything, regardless of role
-		all_trackers_size += VRSystem()->GetSortedTrackedDeviceIndicesOfClass(TrackedDeviceClass_HMD, all_trackers, k_unMaxTrackedDeviceCount);
+		// only detect the HMD if the user requests it.
+		if (enable_hmd) {
+			all_trackers_size += VRSystem()->GetSortedTrackedDeviceIndicesOfClass(TrackedDeviceClass_HMD, all_trackers, k_unMaxTrackedDeviceCount);
+		}
+		// detect controllers and trackers, regardless of role.
 		all_trackers_size += VRSystem()->GetSortedTrackedDeviceIndicesOfClass(TrackedDeviceClass_Controller, all_trackers + all_trackers_size, k_unMaxTrackedDeviceCount - all_trackers_size);
 		all_trackers_size += VRSystem()->GetSortedTrackedDeviceIndicesOfClass(TrackedDeviceClass_GenericTracker, all_trackers + all_trackers_size, k_unMaxTrackedDeviceCount - all_trackers_size);
 
@@ -721,6 +724,7 @@ int main(int argc, char* argv[]) {
 		universe_default
 	);
 	args::ValueFlag<uint32_t> tps(parser, "tps", "Ticks per second. i.e. the number of times per second to send tracking information to slimevr server. Default is 100.", {"tps"}, 100);
+	args::Flag enable_hmd(parser, "hmd", "Enabled sending the HMD position along with controller/tracker information.", {"hmd"});
 
 	args::Group setup_group(parser, "Setup options", args::Group::Validators::AtMostOne);
 	args::Flag install(setup_group, "install", "Installs the manifest and enables autostart. Used by the installer.", {"install"});
@@ -873,7 +877,7 @@ int main(int argc, char* argv[]) {
 				fmt::print("Dashboard closed, re-enabling tracker detection.\n");
 			}
 			overlay_was_open = false;
-			trackers.Detect(just_connected);
+			trackers.Detect(just_connected, enable_hmd);
 		}
 
 		// TODO: rename these actions as appropriate, perhaps log them?
