@@ -27,7 +27,7 @@ jobs:
       - uses: lukka/get-cmake@latest
 
       - name: vcpkg setup/restore artifacts
-        uses: lukka/run-vcpkg@v10.1
+        uses: lukka/run-vcpkg@v10
         id: runvcpkg
         with:
           vcpkgJsonGlob: 'vcpkg.json'
