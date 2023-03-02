@@ -3,7 +3,38 @@
   "controller_type": "holographic_controller",
   "bindings": {
     "/actions/main": {
-      "sources": [],
+      "sources": [
+        {
+          "path": "/user/hand/left/input/trackpad",
+          "mode": "button",
+          "inputs": {}
+        },
+        {
+          "path": "/user/hand/right/input/trackpad",
+          "mode": "button",
+          "inputs": {}
+        },
+        {
+          "path": "/user/hand/left/input/grip",
+          "mode": "button",
+          "inputs": {}
+        },
+        {
+          "path": "/user/hand/right/input/grip",
+          "mode": "button",
+          "inputs": {}
+        },
+        {
+          "path": "/user/hand/left/input/trigger",
+          "mode": "trigger",
+          "inputs": {}
+        },
+        {
+          "path": "/user/hand/right/input/trigger",
+          "mode": "trigger",
+          "inputs": {}
+        }
+      ],
       "skeleton": [],
       "haptics": [],
       "poses": [
@@ -16,6 +47,50 @@
           "output": "/actions/main/in/right_hand",
           "path": "/user/hand/right/pose/raw",
           "requirement": "optional"
+        }
+      ],
+      "chords": [
+        {
+          "output": "/actions/main/in/fast_reset",
+          "inputs": [
+            [
+              "/user/hand/left/input/trigger",
+              "click"
+            ],
+            [
+              "/user/hand/right/input/trigger",
+              "click"
+            ],
+            [
+              "/user/hand/left/input/grip",
+              "held"
+            ],
+            [
+              "/user/hand/right/input/grip",
+              "held"
+            ]
+          ]
+        },
+        {
+          "output": "/actions/main/in/request_calibration",
+          "inputs": [
+            [
+              "/user/hand/left/input/trackpad",
+              "held"
+            ],
+            [
+              "/user/hand/right/input/trackpad",
+              "held"
+            ],
+            [
+              "/user/hand/left/input/trigger",
+              "click"
+            ],
+            [
+              "/user/hand/right/input/trigger",
+              "click"
+            ]
+          ]
         }
       ]
     }
