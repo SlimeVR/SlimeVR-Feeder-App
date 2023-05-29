@@ -26,7 +26,13 @@ int handle_setup(bool install) {
     std::string manifest_path = Path_MakeAbsolute(rel_manifest_path, Path_StripFilename(Path_GetExecutablePath()));
     if (install) {
         if (currently_installed) {
-            fmt::print("Manifest is already installed.\n");
+            if(apps->GetApplicationAutoLaunch(application_key) == false){
+                fmt::print("Enabling auto-start.\n");
+                apps->SetApplicationAutoLaunch(application_key, true);
+            }else{
+                fmt::print("Manifest is already installed and auto-start is enabled.\n");
+            }
+
             return 0;
         }
 
@@ -43,16 +49,15 @@ int handle_setup(bool install) {
             fmt::print("Could not set auto start: {}\n", apps->GetApplicationsErrorNameFromEnum(app_error));
             return EXIT_FAILURE;
         }
-    } else if (currently_installed) { // uninstall
-        fmt::print("Attempting to remove manifest.\n");
-        std::string manifest_path = Path_MakeAbsolute(rel_manifest_path, Path_StripFilename(Path_GetExecutablePath()));
-
-        app_error = apps->RemoveApplicationManifest(manifest_path.c_str());
-
-        if (app_error != vr::VRApplicationError_None) {
-            fmt::print("Manifest could not be removed: {}\n", apps->GetApplicationsErrorNameFromEnum(app_error));
-            return EXIT_FAILURE;
+    } else if (currently_installed) { // disable
+        if (apps->GetApplicationAutoLaunch(application_key) == true){
+            fmt::print("Disabling auto-start\n");
+            apps->SetApplicationAutoLaunch(application_key, false);
+        }else{
+            fmt::print("Auto-start is already disabled\n");
         }
+
+        return 0;
     } else {
         fmt::print("Manifest is not installed.\n");
         return 0;
