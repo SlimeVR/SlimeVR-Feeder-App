@@ -695,7 +695,12 @@ std::optional<UniverseTranslation> search_universe(simdjson::ondemand::parser &j
 			}
 		}
 	} catch (simdjson::simdjson_error& e) {
-		fmt::print("Error while parsing steamvr universes: {}\nraw_token: |{}|\n", e.error(), doc.raw_json_token());
+		std::string_view raw_token_view;
+		if (!doc.raw_json_token().get(raw_token_view)) {
+			fmt::print("Error while parsing steamvr universes: {}\nraw_token: |{}|\n", e.error(), raw_token_view);
+		} else {
+			fmt::print("Error while parsing steamvr universes: {}\n", e.error());
+		}
 		return std::nullopt;
 	}
 
