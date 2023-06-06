@@ -1,6 +1,6 @@
 # SlimeVR Feeder Application
 
-TODO
+TODO:
 
 * It might be worth switching away from C++ because build systems/library management is a pain!
 I'd use rust but rust's openvr stuff is... out of date and unmaintained.
@@ -17,7 +17,24 @@ You can download the feeder app by running the SlimeVR installer here: https://g
 
 Alternatively, you can download the feeder app here: https://github.com/SlimeVR/SlimeVR-Feeder-App/releases/latest/download/SlimeVR-Feeder-App-win64.zip and manually launch the .exe.
 
-### Thanks
+## Building from source
+
+We assume that you already have Git and CMake installed. Run:
+
+```
+git clone --recursive https://github.com/SlimeVR/SlimeVR-Feeder-App.git
+cd SlimeVR-Feeder-App
+cmake -B build
+cmake --build build --target package --config Release
+```
+
+You can then execute the newly built binary:
+
+```
+./build/_CPack_Packages/win64/ZIP/SlimeVR-Feeder-App-win64/SlimeVR-Feeder-App.exe
+```
+
+## Thanks
 This was largely based off of https://github.com/Omnifinity/OpenVR-Tracking-Example , even if the structure is different. Thanks, @Omnifinity.
 
 Rust setup was basically copy-pasted from https://github.com/XiangpengHao/cxx-cmake-example.
