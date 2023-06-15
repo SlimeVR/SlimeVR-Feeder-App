@@ -289,6 +289,10 @@ private:
 			return; // don't send information on slimes
 		}
 
+		if (index == 19) {
+			return; // don't send HMD
+		}
+
 		if (info->status == status_val && !send_anyway) {
 			return; // already up to date;
 		}
@@ -324,6 +328,10 @@ private:
 
 		if (info->is_slimevr) {
 			return; // don't bother with slimes
+		}
+
+		if (index == 19) {
+			return; // don't send HMD
 		}
 
 		if (pose.bPoseIsValid || pose.eTrackingResult == ETrackingResult::TrackingResult_Fallback_RotationOnly) {
@@ -409,6 +417,10 @@ private:
 
 		if (info->is_slimevr) {
 			return; // don't send information on slimes
+		}
+
+		if (index == 19) {
+			return; // don't send HMD
 		}
 
 		bool should_send = false;
