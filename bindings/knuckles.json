@@ -3,38 +3,7 @@
   "controller_type": "knuckles",
   "bindings": {
     "/actions/main": {
-      "sources": [
-        {
-          "path": "/user/hand/left/input/a",
-          "mode": "button",
-          "inputs": {}
-        },
-        {
-          "path": "/user/hand/right/input/a",
-          "mode": "button",
-          "inputs": {}
-        },
-        {
-          "path": "/user/hand/right/input/b",
-          "mode": "button",
-          "inputs": {}
-        },
-        {
-          "path": "/user/hand/left/input/b",
-          "mode": "button",
-          "inputs": {}
-        },
-        {
-          "path": "/user/hand/left/input/trigger",
-          "mode": "trigger",
-          "inputs": {}
-        },
-        {
-          "path": "/user/hand/right/input/trigger",
-          "mode": "trigger",
-          "inputs": {}
-        }
-      ],
+      "sources": [],
       "skeleton": [],
       "haptics": [],
       "poses": [
@@ -47,50 +16,6 @@
           "output": "/actions/main/in/right_hand",
           "path": "/user/hand/right/pose/raw",
           "requirement": "optional"
-        }
-      ],
-      "chords": [
-        {
-          "inputs": [
-            [
-              "/user/hand/left/input/b",
-              "held"
-            ],
-            [
-              "/user/hand/right/input/trigger",
-              "click"
-            ],
-            [
-              "/user/hand/left/input/trigger",
-              "click"
-            ],
-            [
-              "/user/hand/right/input/b",
-              "held"
-            ]
-          ],
-          "output": "/actions/main/in/request_calibration"
-        },
-        {
-          "inputs": [
-            [
-              "/user/hand/left/input/a",
-              "held"
-            ],
-            [
-              "/user/hand/right/input/a",
-              "held"
-            ],
-            [
-              "/user/hand/right/input/trigger",
-              "click"
-            ],
-            [
-              "/user/hand/left/input/trigger",
-              "click"
-            ]
-          ],
-          "output": "/actions/main/in/fast_reset"
         }
       ]
     }
