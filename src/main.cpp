@@ -519,6 +519,10 @@ public:
 		}
 
 		for (unsigned int jjj = 0; jjj < (int)BodyPosition::BodyPosition_Count; ++jjj) {
+			if (!enable_hmd && jjj == (int)BodyPosition::Head) {
+				continue; // don't query the head if we aren't reporting it.
+			}
+
 			InputPoseActionData_t pose;
 			input_error = input->GetPoseActionDataRelativeToNow(action_handles[jjj], universe, 0, &pose, sizeof(pose), 0);
 			if (input_error != EVRInputError::VRInputError_None) {
