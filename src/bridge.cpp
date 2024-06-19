@@ -98,6 +98,8 @@ namespace fs = std::filesystem;
 class UnixSocketBridge final : public SlimeVRBridge {
 private:
     static constexpr std::string_view TMP_DIR = "/tmp";
+    static constexpr std::string_view XDG_DATA_DIR_DEFAULT = ".local/share";
+    static constexpr std::string_view SLIMEVR_DATA_DIR = "slimevr";
     static constexpr std::string_view SOCKET_NAME = "SlimeVRInput";
     inline static constexpr int HEADER_SIZE = 4;
     inline static constexpr int BUFFER_SIZE = 1024;
@@ -140,12 +142,28 @@ private:
 
     void connect() final {
         if (!client.IsOpen()) {
+            fs::path socket;
             // TODO: do this once in the constructor or something
-            if (const char* ptr = std::getenv("XDG_RUNTIME_DIR")) {
+            if(const char* ptr = std::getenv("XDG_RUNTIME_DIR")) {
                 const fs::path xdg_runtime = ptr;
-                client.Open((xdg_runtime / SOCKET_NAME).native());
-            } else {
-                client.Open((fs::path(TMP_DIR) / SOCKET_NAME).native());
+                socket = (xdg_runtime / SOCKET_NAME);
+            }
+            if(!fs::exists(socket)) {
+                socket = (fs::path(TMP_DIR) / SOCKET_NAME);
+            }
+            // try using home dir if the vrserver is run in a chroot like
+            if(!fs::exists(socket)) {
+                if (const char* ptr = std::getenv("XDG_DATA_DIR")) {
+                    const fs::path data_dir = ptr;
+                    socket = (data_dir / SLIMEVR_DATA_DIR / SOCKET_NAME);
+                } else if (const char* ptr = std::getenv("HOME")) {
+                    const fs::path home = ptr;
+                    socket = (home / XDG_DATA_DIR_DEFAULT / SLIMEVR_DATA_DIR / SOCKET_NAME);
+                }
+            }
+            if(fs::exists(socket)) {
+                fmt::print("bridge socket: {}", std::string(socket));
+                client.Open(socket.native());
             }
         }
     }
