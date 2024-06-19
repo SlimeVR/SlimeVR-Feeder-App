@@ -144,6 +144,11 @@
       "name": "/actions/main/in/fast_reset",
       "type": "boolean",
       "requirement": "optional"
+    },
+    {
+      "name": "/actions/main/in/pause_tracking",
+      "type": "boolean",
+      "requirement": "optional"
     }
   ],
   "action_sets": [
