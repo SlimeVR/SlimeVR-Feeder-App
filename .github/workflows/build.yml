@@ -20,10 +20,8 @@ jobs:
       - uses: lukka/get-cmake@latest
 
       - name: vcpkg setup/restore artifacts
-        uses: lukka/run-vcpkg@v10
+        uses: lukka/run-vcpkg@v11
         id: runvcpkg
-        with:
-          vcpkgJsonGlob: 'vcpkg.json'
 
       - name: Prints output of run-vcpkg's action.
         run: echo "root='${{ steps.runvcpkg.outputs.RUNVCPKG_VCPKG_ROOT_OUT }}', triplet='${{ steps.runvcpkg.outputs.RUNVCPKG_VCPKG_DEFAULT_TRIPLET_OUT }}' "
