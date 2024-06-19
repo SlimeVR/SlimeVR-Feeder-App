@@ -151,7 +151,7 @@ VRActionHandle_t GetAction(const char* action_path) {
 	EVRInputError error = (EVRInputError)VRInput()->GetActionHandle(action_path, &handle);
 	if (error != VRInputError_None) {
 		fmt::print("Error: Unable to get action handle '{}': {}", action_path, error);
-		// consider exiting?
+		std::exit(1);
 	}
 
 	return handle;
@@ -602,7 +602,7 @@ public:
 
 			return action_data;
 		} else {
-			fmt::print("Error: VRInput::GetDigitalActionData: {}\n", input_error);
+			fmt::print("Error: VRInput::GetDigitalActionData(\"{}\"): {}\n", server_name, input_error);
 			return {};
 		}
 	}
