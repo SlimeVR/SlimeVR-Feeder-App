@@ -685,7 +685,16 @@ std::optional<UniverseTranslation> search_universe(simdjson::ondemand::parser &j
 
 		for (simdjson::ondemand::object uni: doc["universes"]) {
 			// TODO: universeID comes after the translation, would it be faster to unconditionally parse the translation?
-			simdjson::ondemand::value elem = uni["universeID"];
+			auto res = uni.find_field_unordered("universeID");
+			if (res.error()) {
+				static bool missingId = false;
+				if (!missingId) {
+					missingId = true;
+					fmt::print("Warning: 'universes' are present that don't have a universeID, skipping.");
+				}
+				continue;
+			}
+			simdjson::ondemand::value elem = res.value_unsafe(); // uni["universeID"];
 			
 			uint64_t parsed_universe;
 			auto is_integer = elem.is_integer();
@@ -700,11 +709,20 @@ std::optional<UniverseTranslation> search_universe(simdjson::ondemand::parser &j
 		}
 	} catch (simdjson::simdjson_error& e) {
 		std::string_view raw_token_view;
+
+		static bool parse_error = false;
+		if (parse_error) {
+			return std::nullopt;
+		}
+
 		if (!doc.raw_json_token().get(raw_token_view)) {
 			fmt::print("Error while parsing steamvr universes: {}\nraw_token: |{}|\n", e.error(), raw_token_view);
 		} else {
 			fmt::print("Error while parsing steamvr universes: {}\n", e.error());
 		}
+
+		parse_error = true;
+
 		return std::nullopt;
 	}
 
