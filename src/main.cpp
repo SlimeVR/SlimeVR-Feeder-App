@@ -150,7 +150,7 @@ VRActionHandle_t GetAction(const char* action_path) {
 	VRActionHandle_t handle = k_ulInvalidInputValueHandle;
 	EVRInputError error = (EVRInputError)VRInput()->GetActionHandle(action_path, &handle);
 	if (error != VRInputError_None) {
-		fmt::print("Error: Unable to get action handle '{}': {}", action_path, error);
+		fmt::print("Error: Unable to get action handle '{}': {}", action_path, (int)error);
 		std::exit(1);
 	}
 
@@ -232,7 +232,7 @@ private:
 
 			if (size == 0 || (prop_error != TrackedProp_Success && prop_error != TrackedProp_BufferTooSmall)) {
 				if (prop_error != TrackedProp_Success) {
-					fmt::print("Error getting {}: IVRSystem::GetStringTrackedDeviceProperty({}): {}\n", size ? "data" : "size", prop, system->GetPropErrorNameFromEnum(prop_error));
+					fmt::print("Error getting {}: IVRSystem::GetStringTrackedDeviceProperty({}): {}\n", size ? "data" : "size", (int)prop, system->GetPropErrorNameFromEnum(prop_error));
 				}
 
 				return (uint32_t)0;
@@ -250,7 +250,7 @@ private:
 
 		if (input_error != VRInputError_None && input_error != VRInputError_BufferTooSmall) {
 			if (input_error != VRInputError_None) {
-				fmt::print("Error getting data: IVRInput::GetOriginLocalizedName(): {}\n", input_error);
+				fmt::print("Error getting data: IVRInput::GetOriginLocalizedName(): {}\n", (int)input_error);
 			}
 
 			return std::nullopt;
@@ -265,7 +265,7 @@ private:
 		InputOriginInfo_t info;
 		EVRInputError error = VRInput()->GetOriginTrackedDeviceInfo(value_handle, &info, sizeof(info));
 		if (error != EVRInputError::VRInputError_None) {
-			fmt::print("Error: IVRInput::GetOriginTrackedDeviceInfo: {}\n", error);
+			fmt::print("Error: IVRInput::GetOriginTrackedDeviceInfo: {}\n", (int)error);
 			return std::nullopt;
 		}
 
@@ -303,7 +303,7 @@ private:
 
 		bridge.sendMessage(message);
 
-		fmt::print("Device (Index {}) status: {} ({})\n", index, messages::TrackerStatus_Status_Name(status_val), status_val);
+		fmt::print("Device (Index {}) status: {} ({})\n", index, messages::TrackerStatus_Status_Name(status_val), (int)status_val);
 	}
 
 	void Update(TrackedDeviceIndex_t index, bool just_connected) {
@@ -514,7 +514,7 @@ public:
 		auto input = VRInput();
 		EVRInputError input_error = input->UpdateActionState(&actionSet, sizeof(VRActiveActionSet_t), 1);
 		if (input_error != EVRInputError::VRInputError_None) {
-			fmt::print("Error: IVRInput::UpdateActionState: {}\n", input_error);
+			fmt::print("Error: IVRInput::UpdateActionState: {}\n", (int)input_error);
 			return;
 		}
 
@@ -526,7 +526,7 @@ public:
 			InputPoseActionData_t pose;
 			input_error = input->GetPoseActionDataRelativeToNow(action_handles[jjj], universe, 0, &pose, sizeof(pose), 0);
 			if (input_error != EVRInputError::VRInputError_None) {
-				fmt::print("Error: IVRInput::GetPoseActionDataRelativeToNow: {}\n", input_error);
+				fmt::print("Error: IVRInput::GetPoseActionDataRelativeToNow: {}\n", (int)input_error);
 				continue;
 			}
 
@@ -602,7 +602,7 @@ public:
 
 			return action_data;
 		} else {
-			fmt::print("Error: VRInput::GetDigitalActionData(\"{}\"): {}\n", server_name, input_error);
+			fmt::print("Error: VRInput::GetDigitalActionData(\"{}\"): {}\n", server_name.value_or("<unnamed>"), (int)input_error);
 			return {};
 		}
 	}
@@ -616,12 +616,12 @@ std::optional<Trackers> Trackers::Create(SlimeVRBridge &bridge, ETrackingUnivers
 	std::string actionsFileName = Path_MakeAbsolute(actions_path, Path_StripFilename(Path_GetExecutablePath()));
 
 	if ((input_error = VRInput()->SetActionManifestPath(actionsFileName.c_str())) != EVRInputError::VRInputError_None) {
-		fmt::print("Error: IVRInput::SetActionManifectPath: {}\n", input_error);
+		fmt::print("Error: IVRInput::SetActionManifectPath: {}\n", (int)input_error);
 		return std::nullopt;
 	}
 
 	if ((input_error = VRInput()->GetActionSetHandle("/actions/main", &action_set_handle)) != EVRInputError::VRInputError_None) {
-		fmt::print("Error: VRInput::GetActionSetHandle: {}\n", input_error);
+		fmt::print("Error: VRInput::GetActionSetHandle: {}\n", (int)input_error);
 		return std::nullopt;
 	}
 
@@ -716,9 +716,9 @@ std::optional<UniverseTranslation> search_universe(simdjson::ondemand::parser &j
 		}
 
 		if (!doc.raw_json_token().get(raw_token_view)) {
-			fmt::print("Error while parsing steamvr universes: {}\nraw_token: |{}|\n", e.error(), raw_token_view);
+			fmt::print("Error while parsing steamvr universes: {}\nraw_token: |{}|\n", e.what(), raw_token_view);
 		} else {
-			fmt::print("Error while parsing steamvr universes: {}\n", e.error());
+			fmt::print("Error while parsing steamvr universes: {}\n", e.what());
 		}
 
 		parse_error = true;
