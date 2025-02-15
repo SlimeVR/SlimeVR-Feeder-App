@@ -197,8 +197,7 @@ struct TrackerInfo {
 	/// number of ticks since NONE position was first detected
 	uint8_t detect_timeout = 0;
 
-	bool is_slimevr = false;
-	bool is_standablevr = false;
+	bool blacklisted = false;
 };
 
 class Trackers {
@@ -286,8 +285,8 @@ private:
 
 		auto info = tracker_info + index;
 
-		if (info->is_slimevr || info->is_standablevr) {
-			return; // don't send information on slimes and standablevr
+		if (info->blacklisted) {
+			return; // don't send information on blacklisted trackers
 		}
 
 		if (info->status == status_val && !send_anyway) {
@@ -323,8 +322,8 @@ private:
 		// 	info->connection_timeout = 0;
 		// }
 
-		if (info->is_slimevr || info->is_standablevr) {
-			return; // don't bother with slimes and standablevr
+		if (info->blacklisted) {
+			return; // don't bother with blacklisted trackers
 		}
 
 		if (pose.bPoseIsValid || pose.eTrackingResult == ETrackingResult::TrackingResult_Fallback_RotationOnly) {
@@ -408,8 +407,8 @@ private:
 
 		info->connection_timeout = 0;
 
-		if (info->is_slimevr || info->is_standablevr) {
-			return; // don't send information on slimes and standablevr
+		if (info->blacklisted) {
+			return; // don't send information on blacklisted trackers
 		}
 
 		bool should_send = false;
@@ -491,8 +490,7 @@ public:
 			auto driver = this->GetStringProp(index, ETrackedDeviceProperty::Prop_TrackingSystemName_String);
 			auto info = tracker_info + index;
 
-			info->is_slimevr = (driver == "SlimeVR" || driver == "slimevr");
-			info->is_standablevr = (driver == "standable");
+			info->blacklisted = (driver == "SlimeVR" || driver == "slimevr" || driver == "standable");
 
 			// only write values once, to avoid overwriting good values later.
 			if (info->name == "") {
