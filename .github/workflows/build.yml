@@ -44,9 +44,14 @@ jobs:
         run: echo "artifactPath=$(realpath build/_CPack_Packages/*/ZIP/SlimeVR-Feeder-App-*/ --relative-to .)" >> $GITHUB_ENV
         shell: bash
 
+      - name: Get name for Artifact
+        run: echo "artifactName=$(basename -- ${{ env.artifactPath }} .zip )" >> $GITHUB_ENV
+        shell: bash
+
       - name: Upload Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
+          name: ${{ env.artifactName }}
           path: ${{ env.artifactPath }}
 
       - name: Release

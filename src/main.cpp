@@ -198,6 +198,7 @@ struct TrackerInfo {
 	uint8_t detect_timeout = 0;
 
 	bool is_slimevr = false;
+	bool is_standablevr = false;
 };
 
 class Trackers {
@@ -285,8 +286,8 @@ private:
 
 		auto info = tracker_info + index;
 
-		if (info->is_slimevr) {
-			return; // don't send information on slimes
+		if (info->is_slimevr || info->is_standablevr) {
+			return; // don't send information on slimes and standablevr
 		}
 
 		if (info->status == status_val && !send_anyway) {
@@ -322,8 +323,8 @@ private:
 		// 	info->connection_timeout = 0;
 		// }
 
-		if (info->is_slimevr) {
-			return; // don't bother with slimes
+		if (info->is_slimevr || info->is_standablevr) {
+			return; // don't bother with slimes and standablevr
 		}
 
 		if (pose.bPoseIsValid || pose.eTrackingResult == ETrackingResult::TrackingResult_Fallback_RotationOnly) {
@@ -407,8 +408,8 @@ private:
 
 		info->connection_timeout = 0;
 
-		if (info->is_slimevr) {
-			return; // don't send information on slimes
+		if (info->is_slimevr || info->is_standablevr) {
+			return; // don't send information on slimes and standablevr
 		}
 
 		bool should_send = false;
@@ -491,6 +492,7 @@ public:
 			auto info = tracker_info + index;
 
 			info->is_slimevr = (driver == "SlimeVR" || driver == "slimevr");
+			info->is_standablevr = (driver == "standable");
 
 			// only write values once, to avoid overwriting good values later.
 			if (info->name == "") {
