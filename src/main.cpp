@@ -21,6 +21,10 @@
 #include "version.h"
 #include <ProtobufMessages.pb.h>
 
+#if defined(WIN32)
+#include <Windows.h>
+#endif
+
 using namespace vr;
 
 // TODO: Temp Path
@@ -757,6 +761,8 @@ int main(int argc, char* argv[]) {
 	args::Flag install(setup_group, "install", "Installs the manifest and enables autostart. Used by the installer.", {"install"});
 	args::Flag uninstall(setup_group, "uninstall", "Removes the manifest file.", {"uninstall"});
 
+	args::Flag show_console(parser, "console", "Show the command line output which is hidden by default.", {"console"});
+
 	std::string configFileName = Path_MakeAbsolute(config_path, Path_StripFilename(Path_GetExecutablePath()));
 	std::ifstream configFile(configFileName);
 
@@ -833,6 +839,21 @@ int main(int argc, char* argv[]) {
 	if (!maybe_trackers.has_value()) {
 		return EXIT_FAILURE;
 	}
+
+#if defined(WIN32)
+	// Hide command line output after any potential error
+	if (!show_console) {
+		// Thanks https://stackoverflow.com/a/78943791
+		HWND hwnd = GetConsoleWindow();
+		HWND owner = GetWindow(hwnd, GW_OWNER);
+		if (owner == NULL) {
+		    ShowWindow(hwnd, SW_HIDE); // Windows 10
+		}
+		else {
+		    ShowWindow(owner, SW_HIDE);// Windows 11
+		}
+	}
+#endif
 
 	Trackers trackers = maybe_trackers.value();
 
