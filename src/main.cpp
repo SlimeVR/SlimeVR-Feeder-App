@@ -761,7 +761,7 @@ int main(int argc, char* argv[]) {
 	args::Flag install(setup_group, "install", "Installs the manifest and enables autostart. Used by the installer.", {"install"});
 	args::Flag uninstall(setup_group, "uninstall", "Removes the manifest file.", {"uninstall"});
 
-	args::Flag show_console(parser, "console", "Show the command line output which is hidden by default.", {"console"});
+	args::Flag show_console(parser, "console", "Show the command line output which is hidden by default on Windows.", {"console"});
 
 	std::string configFileName = Path_MakeAbsolute(config_path, Path_StripFilename(Path_GetExecutablePath()));
 	std::ifstream configFile(configFileName);
@@ -844,13 +844,13 @@ int main(int argc, char* argv[]) {
 	// Hide command line output after any potential error
 	if (!show_console) {
 		// Thanks https://stackoverflow.com/a/78943791
-		HWND hwnd = GetConsoleWindow();
-		HWND owner = GetWindow(hwnd, GW_OWNER);
-		if (owner == NULL) {
-		    ShowWindow(hwnd, SW_HIDE); // Windows 10
+		HWND console = GetConsoleWindow();
+		HWND console_owner = GetWindow(console, GW_OWNER);
+		if (console_owner == NULL) {
+		    ShowWindow(console, SW_HIDE);
 		}
 		else {
-		    ShowWindow(owner, SW_HIDE);// Windows 11
+		    ShowWindow(console_owner, SW_HIDE); // Windows Terminal
 		}
 	}
 #endif
