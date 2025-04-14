@@ -100,6 +100,7 @@ private:
     static constexpr std::string_view TMP_DIR = "/tmp";
     static constexpr std::string_view XDG_DATA_DIR_DEFAULT = ".local/share";
     static constexpr std::string_view SLIMEVR_DATA_DIR = "slimevr";
+    static constexpr std::string_view SLIMEVR_FLATPAK_RUNTIME_DIR = "app/dev.slimevr.SlimeVR";
     static constexpr std::string_view SOCKET_NAME = "SlimeVRInput";
     inline static constexpr int HEADER_SIZE = 4;
     inline static constexpr int BUFFER_SIZE = 1024;
@@ -146,7 +147,11 @@ private:
             // TODO: do this once in the constructor or something
             if(const char* ptr = std::getenv("XDG_RUNTIME_DIR")) {
                 const fs::path xdg_runtime = ptr;
-                socket = (xdg_runtime / SOCKET_NAME);
+                // check flatpak dir first, then root runtime dir
+                socket = (xdg_runtime / SLIMEVR_FLATPAK_RUNTIME_DIR / SOCKET_NAME);
+                if(!fs::exists(socket)) {
+                    socket = (xdg_runtime / SOCKET_NAME);
+                }
             }
             if(!fs::exists(socket)) {
                 socket = (fs::path(TMP_DIR) / SOCKET_NAME);
