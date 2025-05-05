@@ -35,7 +35,7 @@ class NamedPipeBridge final: public SlimeVRBridge {
             }
 
             DWORD size = size_bytes[0] | size_bytes[1] << 8 | size_bytes[2] << 16 | size_bytes[3] << 24;
-            buffer.reserve(size);
+            buffer.resize(size);
             if (!ReadFile(pipe, buffer.data(), size, &read_bytes, NULL)) {
                 pipe_error();
                 return false;
@@ -50,7 +50,7 @@ class NamedPipeBridge final: public SlimeVRBridge {
             }
 
             DWORD size = msg.ByteSizeLong() + 4; // wire size includes 4 bytes for size
-            buffer.reserve(size);
+            buffer.resize(size);
 
             buffer[0] = size & 0xFF;
             buffer[1] = (size >> 8) & 0xFF;
