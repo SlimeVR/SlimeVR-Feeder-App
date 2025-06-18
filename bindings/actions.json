@@ -146,6 +146,11 @@
       "requirement": "optional"
     },
     {
+      "name": "/actions/main/in/mounting_reset",
+      "type": "boolean",
+      "requirement": "optional"
+    },
+    {
       "name": "/actions/main/in/pause_tracking",
       "type": "boolean",
       "requirement": "optional"
