@@ -175,6 +175,7 @@
       "/actions/main/in/foot_right": "Right Foot",
       "/actions/main/in/request_calibration": "Reset",
       "/actions/main/in/fast_reset": "Fast Reset",
+      "/actions/main/in/mounting_reset": "Mounting Reset",
       "/actions/main/in/pause_tracking": "Pause Tracking"
     }
   ]

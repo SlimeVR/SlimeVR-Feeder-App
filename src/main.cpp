@@ -859,6 +859,7 @@ int main(int argc, char* argv[]) {
 
 	VRActionHandle_t calibration_action = GetAction("/actions/main/in/request_calibration");
 	VRActionHandle_t fast_reset_action = GetAction("/actions/main/in/fast_reset");
+	VRActionHandle_t mounting_reset_action = GetAction("/actions/main/in/mounting_reset");
 	VRActionHandle_t pause_tracking_action = GetAction("/actions/main/in/pause_tracking");
 
 	//trackers.Detect(false);
@@ -932,6 +933,7 @@ int main(int argc, char* argv[]) {
 		// TODO: rename these actions as appropriate, perhaps log them?
 		trackers.HandleDigitalActionBool(calibration_action, { "reset" });
 		trackers.HandleDigitalActionBool(fast_reset_action, { "fast_reset" });
+		trackers.HandleDigitalActionBool(mounting_reset_action, { "mounting_reset" });
 		trackers.HandleDigitalActionBool(pause_tracking_action, { "pause_tracking" });
 
 		trackers.Tick(just_connected);
