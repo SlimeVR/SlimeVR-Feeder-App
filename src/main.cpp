@@ -13,6 +13,7 @@
 #include <fstream>
 #include <simdjson.h>
 #include <args.hxx>
+#include <ctime>
 
 #include "pathtools_excerpt.h"
 #include "matrix_utils.h"
@@ -668,9 +669,26 @@ static constexpr std::pair<ETrackingUniverseOrigin, bool> universe_default = {ET
 // TEMP, cba to setup a proper header file.
 void test_lto();
 
+static time_t lastSearchUniverseAt = 0L;
+static const time_t MinDelayBetweenSearchUniverse = 10L;
+
 std::optional<UniverseTranslation> search_universe(simdjson::ondemand::parser &json_parser, uint64_t target) {
+
+	// When the universe cannot be found, the main loop will keep querying
+	// SteamVR in a very fast loop, which may cause SteamVR to lock up and
+	// crash. Instead, we only search for the universe at most once every few
+	// seconds.
+	time_t now = std::time(NULL);
+	if (now < lastSearchUniverseAt + MinDelayBetweenSearchUniverse) {
+		return std::nullopt;
+	}
+
+	lastSearchUniverseAt = now;
+
 	uint32_t length = 0;
-	VRChaperoneSetup()->ExportLiveToBuffer(nullptr, &length);
+	if (!VRChaperoneSetup()->ExportLiveToBuffer(nullptr, &length)) {
+		return std::nullopt;
+	}
 
 	// compile time check to ensure we're being sane, otherwise this would be a buffer overrun!
 	static_assert(simdjson::SIMDJSON_PADDING >= 1, "simdjson doesn't specify enough padding for a trailing null byte!");
