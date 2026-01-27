@@ -519,9 +519,9 @@ public:
 
 			// only write values once, to avoid overwriting good values later.
 			if (info->name == "") {
-				auto controller_type = this->GetStringProp(index, ETrackedDeviceProperty::Prop_ControllerType_String);
-				if (controller_type.has_value()) {
-					info->name = controller_type.value();
+				auto model_number = this->GetStringProp(index, ETrackedDeviceProperty::Prop_ModelNumber_String);
+				if (model_number.has_value()) {
+					info->name = model_number.value();
 				} else {
 					// uhhhhhhhhhhhhhhh
 					info->name = fmt::format("Index{}", index);
