@@ -192,6 +192,7 @@ enum class TrackerState {
 struct TrackerInfo {
 	std::string name = "";
 	std::optional<std::string> serial = std::nullopt;
+	std::optional<std::string> manufacturer = std::nullopt;
 	SlimeVRPosition position = SlimeVRPosition::None;
 	messages::TrackerStatus_Status status = messages::TrackerStatus_Status_DISCONNECTED;
 
@@ -461,6 +462,9 @@ private:
 			if (info->serial.has_value()) {
 				added->set_tracker_serial(info->serial.value());
 			}
+			if (info->manufacturer.has_value()) {
+				added->set_manufacturer(info->manufacturer.value());
+			}
 
 			bridge.sendMessage(message);
 
@@ -508,6 +512,7 @@ public:
 			}
 
 			info->serial = this->GetStringProp(index, ETrackedDeviceProperty::Prop_SerialNumber_String);
+			info->manufacturer = this->GetStringProp(index, ETrackedDeviceProperty::Prop_ManufacturerName_String);
 
 			current_trackers.insert(index);
 
