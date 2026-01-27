@@ -6,18 +6,7 @@
       "sources": [],
       "skeleton": [],
       "haptics": [],
-      "poses": [
-        {
-          "output": "/actions/main/in/left_hand",
-          "path": "/user/hand/left/pose/raw",
-          "requirement": "optional"
-        },
-        {
-          "output": "/actions/main/in/right_hand",
-          "path": "/user/hand/right/pose/raw",
-          "requirement": "optional"
-        }
-      ]
+      "poses": []
     }
   }
 }

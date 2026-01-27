@@ -23,118 +23,9 @@
     {
       "controller_type": "holographic_controller",
       "binding_url": "holographic_controller.json"
-    },
-    {
-      "controller_type": "vive_tracker_chest",
-      "binding_url": "vive_tracker_chest.json"
-    },
-    {
-      "controller_type": "vive_tracker_left_elbow",
-      "binding_url": "vive_tracker_left_elbow.json"
-    },
-    {
-      "controller_type": "vive_tracker_left_foot",
-      "binding_url": "vive_tracker_left_foot.json"
-    },
-    {
-      "controller_type": "vive_tracker_left_knee",
-      "binding_url": "vive_tracker_left_knee.json"
-    },
-    {
-      "controller_type": "vive_tracker_left_shoulder",
-      "binding_url": "vive_tracker_left_shoulder.json"
-    },
-    {
-      "controller_type": "vive_tracker_right_elbow",
-      "binding_url": "vive_tracker_right_elbow.json"
-    },
-    {
-      "controller_type": "vive_tracker_right_foot",
-      "binding_url": "vive_tracker_right_foot.json"
-    },
-    {
-      "controller_type": "vive_tracker_right_knee",
-      "binding_url": "vive_tracker_right_knee.json"
-    },
-    {
-      "controller_type": "vive_tracker_right_shoulder",
-      "binding_url": "vive_tracker_right_shoulder.json"
-    },
-    {
-      "controller_type": "vive_tracker_waist",
-      "binding_url": "vive_tracker_waist.json"
-    },
-    {
-      "controller_type": "generic_hmd",
-      "binding_url": "generic_hmd.json"
     }
   ],
   "actions": [
-    {
-      "name": "/actions/main/in/head",
-      "type": "pose",
-      "requirement": "optional"
-    },
-    {
-      "name": "/actions/main/in/left_hand",
-      "type": "pose",
-      "requirement": "optional"
-    },
-    {
-      "name": "/actions/main/in/right_hand",
-      "type": "pose",
-      "requirement": "optional"
-    },
-    {
-      "name": "/actions/main/in/chest",
-      "type": "pose",
-      "requirement": "optional"
-    },
-    {
-      "name": "/actions/main/in/left_elbow",
-      "type": "pose",
-      "requirement": "optional"
-    },
-    {
-      "name": "/actions/main/in/left_foot",
-      "type": "pose",
-      "requirement": "optional"
-    },
-    {
-      "name": "/actions/main/in/left_knee",
-      "type": "pose",
-      "requirement": "optional"
-    },
-    {
-      "name": "/actions/main/in/left_shoulder",
-      "type": "pose",
-      "requirement": "optional"
-    },
-    {
-      "name": "/actions/main/in/right_elbow",
-      "type": "pose",
-      "requirement": "optional"
-    },
-    {
-      "name": "/actions/main/in/right_foot",
-      "type": "pose",
-      "requirement": "optional"
-    },
-    {
-      "name": "/actions/main/in/right_knee",
-      "type": "pose",
-      "requirement": "optional"
-    },
-    {
-      "name": "/actions/main/in/right_shoulder",
-      "type": "pose",
-      "requirement": "optional"
-    },
-    {
-      "name": "/actions/main/in/waist",
-      "type": "pose",
-      "requirement": "optional"
-    },
     {
       "name": "/actions/main/in/request_calibration",
       "type": "boolean",
@@ -165,19 +56,6 @@
   "localization": [
     {
       "language_tag": "en_us",
-      "/actions/main/in/head": "Head",
-      "/actions/main/in/left_hand": "Left Hand",
-      "/actions/main/in/right_hand": "Right Hand",
-      "/actions/main/in/chest": "Chest",
-      "/actions/main/in/left_shoulder": "Left Shoulder",
-      "/actions/main/in/right_shoulder": "Right Shoulder",
-      "/actions/main/in/left_elbow": "Left Elbow",
-      "/actions/main/in/right_elbow": "Right Elbow",
-      "/actions/main/in/left_knee": "Left Knee",
-      "/actions/main/in/right_knee": "Right Knee",
-      "/actions/main/in/waist": "Waist",
-      "/actions/main/in/foot_left": "Left Foot",
-      "/actions/main/in/foot_right": "Right Foot",
       "/actions/main/in/request_calibration": "Full Reset",
       "/actions/main/in/fast_reset": "Yaw Reset",
       "/actions/main/in/mounting_reset": "Mounting Reset",
