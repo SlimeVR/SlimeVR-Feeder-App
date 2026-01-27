@@ -31,24 +31,6 @@ using namespace vr;
 static constexpr const char* actions_path = "./bindings/actions.json";
 static constexpr const char* config_path = "./config.txt";
 
-enum class BodyPosition {
-	Head = 0,
-	LeftHand,
-	RightHand,
-	LeftFoot,
-	RightFoot,
-	LeftShoulder,
-	RightShoulder,
-	LeftElbow,
-	RightElbow,
-	LeftKnee,
-	RightKnee,
-	Waist,
-	Chest,
-	BodyPosition_Count
-};
-
-// TODO: keep track of things as SlimeVRPosition in the first place.
 enum class SlimeVRPosition {
 	None = 0,
 	Waist,
@@ -74,22 +56,6 @@ enum class SlimeVRPosition {
 	GenericController
 };
 
-static constexpr SlimeVRPosition positionIDs[(int)BodyPosition::BodyPosition_Count] = {
-	SlimeVRPosition::Head,
-	SlimeVRPosition::LeftController,
-	SlimeVRPosition::RightController,
-	SlimeVRPosition::LeftFoot,
-	SlimeVRPosition::RightFoot,
-	SlimeVRPosition::LeftShoulder,
-	SlimeVRPosition::RightShoulder,
-	SlimeVRPosition::LeftElbow,
-	SlimeVRPosition::RightElbow,
-	SlimeVRPosition::LeftKnee,
-	SlimeVRPosition::RightKnee,
-	SlimeVRPosition::Waist,
-	SlimeVRPosition::Chest
-};
-
 static constexpr const char* positionNames[(int)SlimeVRPosition::GenericController + 1] = {
 	"None",
 	"Waist",
@@ -113,22 +79,6 @@ static constexpr const char* positionNames[(int)SlimeVRPosition::GenericControll
 	"HMD",
 	"Beacon",
 	"GenericController"
-};
-
-static constexpr const char* actions[(int)BodyPosition::BodyPosition_Count] = {
-	"/actions/main/in/head",
-	"/actions/main/in/left_hand",
-	"/actions/main/in/right_hand",
-	"/actions/main/in/left_foot",
-	"/actions/main/in/right_foot",
-	"/actions/main/in/left_shoulder",
-	"/actions/main/in/right_shoulder",
-	"/actions/main/in/left_elbow",
-	"/actions/main/in/right_elbow",
-	"/actions/main/in/left_knee",
-	"/actions/main/in/right_knee",
-	"/actions/main/in/waist",
-	"/actions/main/in/chest"
 };
 
 template<typename F>
@@ -206,6 +156,19 @@ struct TrackerInfo {
 	bool blacklisted = false;
 };
 
+std::unordered_map<std::string, SlimeVRPosition> controller_type_to_position{
+	{"vive_tracker_chest", SlimeVRPosition::Chest},
+	{"vive_tracker_left_shoulder", SlimeVRPosition::LeftShoulder},
+	{"vive_tracker_right_shoulder", SlimeVRPosition::RightShoulder},
+	{"vive_tracker_left_elbow", SlimeVRPosition::LeftElbow},
+	{"vive_tracker_right_elbow", SlimeVRPosition::RightElbow},
+	{"vive_tracker_waist", SlimeVRPosition::Waist},
+	{"vive_tracker_left_knee", SlimeVRPosition::LeftKnee},
+	{"vive_tracker_right_knee", SlimeVRPosition::RightKnee},
+	{"vive_tracker_left_foot", SlimeVRPosition::LeftFoot},
+	{"vive_tracker_right_foot", SlimeVRPosition::RightFoot},
+};
+
 class Trackers {
 private:
 	TrackerInfo tracker_info[k_unMaxTrackedDeviceCount] = {};
@@ -221,7 +184,6 @@ public:
 	std::optional<std::pair<uint64_t, UniverseTranslation>> current_universe = std::nullopt;
 private:
 	ETrackingUniverseOrigin universe;
-	VRActionHandle_t action_handles[(int)BodyPosition::BodyPosition_Count];
 
 	Trackers(SlimeVRBridge &bridge, ETrackingUniverseOrigin universe): bridge(bridge), universe(universe) {}
 
@@ -533,54 +495,36 @@ public:
 
 			current_trackers.insert(index);
 
-			SetPosition(index, SlimeVRPosition::None, just_connected);
-		}
+			auto position = SlimeVRPosition::None;
 
-		// detect roles, more specific names
-		auto input = VRInput();
-		EVRInputError input_error = input->UpdateActionState(&actionSet, sizeof(VRActiveActionSet_t), 1);
-		if (input_error != EVRInputError::VRInputError_None) {
-			fmt::print("Error: IVRInput::UpdateActionState: {}\n", (int)input_error);
-			return;
-		}
-
-		for (unsigned int jjj = 0; jjj < (int)BodyPosition::BodyPosition_Count; ++jjj) {
-			if (!enable_hmd && jjj == (int)BodyPosition::Head) {
-				continue; // don't query the head if we aren't reporting it.
-			}
-
-			InputPoseActionData_t pose;
-			input_error = input->GetPoseActionDataRelativeToNow(action_handles[jjj], universe, 0, &pose, sizeof(pose), 0);
-			if (input_error != EVRInputError::VRInputError_None) {
-				fmt::print("Error: IVRInput::GetPoseActionDataRelativeToNow: {}\n", (int)input_error);
-				continue;
-			}
-
-			if (pose.bActive) {
-				std::optional<TrackedDeviceIndex_t> trackedDeviceIndex = GetIndex(pose.activeOrigin);
-				if (!trackedDeviceIndex.has_value()) {
-					// already printed a message about this in GetIndex, just continue.
-					continue;
+			auto device_class = VRSystem()->GetTrackedDeviceClass(index);
+			switch (device_class) {
+			case ETrackedDeviceClass::TrackedDeviceClass_HMD:
+				position = SlimeVRPosition::HMD;
+				break;
+			case ETrackedDeviceClass::TrackedDeviceClass_Controller: {
+				auto role_hint = VRSystem()->GetInt32TrackedDeviceProperty(index, ETrackedDeviceProperty::Prop_ControllerRoleHint_Int32);
+				if (role_hint == ETrackedControllerRole::TrackedControllerRole_LeftHand) {
+					position = SlimeVRPosition::LeftHand;
+				} else if (role_hint == ETrackedControllerRole::TrackedControllerRole_RightHand) {
+					position = SlimeVRPosition::RightHand;
 				}
-
-				auto index = trackedDeviceIndex.value();
-
-				// TODO: I feel like this 'only left+right hand' thing is going to bite us in the ass later with things that aren't index/vive trackers.
-				// oh well.
-				auto name = GetLocalizedName(
-					pose.activeOrigin,
-					(jjj == (int)BodyPosition::LeftHand || jjj == (int)BodyPosition::RightHand)
-						? EVRInputStringBits::VRInputString_Hand
-						: (EVRInputStringBits)0
-				);
-				if (name.has_value()) {
-					tracker_info[index].name = name.value();
-				}
-
-				current_trackers.insert(index);
-
-				SetPosition(index, positionIDs[jjj], just_connected);
+				break;
 			}
+			case ETrackedDeviceClass::TrackedDeviceClass_GenericTracker: {
+				auto controller_type = this->GetStringProp(index, ETrackedDeviceProperty::Prop_ControllerType_String).value_or("");
+				if (controller_type.empty()) break;
+
+				if (auto it = controller_type_to_position.find(controller_type); it != controller_type_to_position.cend()) {
+					position = it->second;
+				}
+				break;
+			}
+			default:
+				break;
+			}
+
+			SetPosition(index, position, just_connected);
 		}
 
 		for (auto iii = 0; iii < k_unMaxTrackedDeviceCount; ++iii) {
@@ -658,10 +602,6 @@ std::optional<Trackers> Trackers::Create(SlimeVRBridge &bridge, ETrackingUnivers
 		0,
 		0
 	};
-
-	for (unsigned int iii = 0; iii < (int)BodyPosition::BodyPosition_Count; ++iii) {
-		result.action_handles[iii] = GetAction(actions[iii]);
-	}
 
 	return result;
 }
@@ -941,9 +881,6 @@ int main(int argc, char* argv[]) {
 				fmt::print("Dashboard open, pausing detection.\n");
 			}
 			overlay_was_open = true;
-
-			// we should still be updating the action state, to get DigitalActions while the dashboard is open.
-			VRInput()->UpdateActionState(&trackers.actionSet, sizeof(VRActiveActionSet_t), 1);
 		} else {
 			if (overlay_was_open) {
 				fmt::print("Dashboard closed, re-enabling tracker detection.\n");
@@ -953,6 +890,7 @@ int main(int argc, char* argv[]) {
 		}
 
 		// TODO: rename these actions as appropriate, perhaps log them?
+		VRInput()->UpdateActionState(&trackers.actionSet, sizeof(VRActiveActionSet_t), 1);
 		trackers.HandleDigitalActionBool(calibration_action, { "reset" });
 		trackers.HandleDigitalActionBool(fast_reset_action, { "fast_reset" });
 		trackers.HandleDigitalActionBool(mounting_reset_action, { "mounting_reset" });
