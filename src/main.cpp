@@ -201,6 +201,7 @@ struct TrackerInfo {
 	uint8_t connection_timeout = 0;
 	/// number of ticks since NONE position was first detected
 	uint8_t detect_timeout = 0;
+	std::chrono::steady_clock::time_point last_battery_update{};
 
 	bool blacklisted = false;
 };
@@ -400,6 +401,22 @@ private:
 			} else {
 				SetStatus(index, messages::TrackerStatus_Status_ERROR, just_connected);
 			}
+		}
+
+		auto *system = VRSystem();
+		auto now = std::chrono::steady_clock::now();
+		vr::ETrackedPropertyError err{};
+		bool provides_battery = system->GetBoolTrackedDeviceProperty(index, vr::Prop_DeviceProvidesBatteryStatus_Bool);
+		float battery_percent = provides_battery ? system->GetFloatTrackedDeviceProperty(index, vr::Prop_DeviceBatteryPercentage_Float, &err) : 0.f;
+		if (provides_battery && err == vr::ETrackedPropertyError::TrackedProp_Success && now - info->last_battery_update >= std::chrono::seconds(1)) {
+			messages::ProtobufMessage message;
+			messages::Battery *battery = message.mutable_battery();
+			battery->set_battery_level(battery_percent * 100.f);
+			battery->set_is_charging(system->GetBoolTrackedDeviceProperty(index, vr::Prop_DeviceIsCharging_Bool));
+			battery->set_tracker_id(index);
+			info->last_battery_update = now;
+		} else if (err != vr::ETrackedPropertyError::TrackedProp_Success) {
+			fmt::print("Update: Failed to get battery percentage for device {}: {}", index, system->GetPropErrorNameFromEnum(err));
 		}
 	}
 
