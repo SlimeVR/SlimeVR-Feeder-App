@@ -861,19 +861,7 @@ int main(int argc, char* argv[]) {
 			}
 		}
 
-		// TODO: don't do this every loop, we really shouldn't need to.
-		if (VROverlay()->IsDashboardVisible()) {
-			if (!overlay_was_open) {
-				fmt::print("Dashboard open, pausing detection.\n");
-			}
-			overlay_was_open = true;
-		} else {
-			if (overlay_was_open) {
-				fmt::print("Dashboard closed, re-enabling tracker detection.\n");
-			}
-			overlay_was_open = false;
-			trackers.Detect(just_connected, enable_hmd);
-		}
+		trackers.Detect(just_connected, enable_hmd);
 
 		// TODO: rename these actions as appropriate, perhaps log them?
 		VRInput()->UpdateActionState(&trackers.actionSet, sizeof(VRActiveActionSet_t), 1);
