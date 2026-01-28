@@ -471,9 +471,21 @@ public:
 
 			// only write values once, to avoid overwriting good values later.
 			if (info->name == "") {
-				auto model_number = this->GetStringProp(index, ETrackedDeviceProperty::Prop_ModelNumber_String);
-				if (model_number.has_value()) {
+				if (auto model_number = this->GetStringProp(index, ETrackedDeviceProperty::Prop_ModelNumber_String); model_number.has_value()) {
 					info->name = model_number.value();
+				} else if (auto controller_type = this->GetStringProp(index, ETrackedDeviceProperty::Prop_ControllerType_String); controller_type.has_value()) {
+					std::string hand{};
+					switch (VRSystem()->GetInt32TrackedDeviceProperty(index, ETrackedDeviceProperty::Prop_ControllerRoleHint_Int32)) {
+					case ETrackedControllerRole::TrackedControllerRole_LeftHand:
+						hand = "Left ";
+						break;
+					case ETrackedControllerRole::TrackedControllerRole_RightHand:
+						hand = "Right ";
+						break;
+					default:
+						break;
+					}
+					info->name = fmt::format("{}{}", hand, controller_type.value());
 				} else {
 					// uhhhhhhhhhhhhhhh
 					info->name = fmt::format("Index{}", index);
