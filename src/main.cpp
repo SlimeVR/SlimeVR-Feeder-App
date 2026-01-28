@@ -152,8 +152,6 @@ struct TrackerInfo {
 	/// number of ticks since NONE position was first detected
 	uint8_t detect_timeout = 0;
 	std::chrono::steady_clock::time_point last_battery_update{};
-
-	bool blacklisted = false;
 };
 
 std::unordered_map<std::string, SlimeVRPosition> controller_type_to_position{
@@ -253,10 +251,6 @@ private:
 
 		auto info = tracker_info + index;
 
-		if (info->blacklisted) {
-			return; // don't send information on blacklisted trackers
-		}
-
 		if (info->status == status_val && !send_anyway) {
 			return; // already up to date;
 		}
@@ -289,10 +283,6 @@ private:
 		// if(pose.bDeviceIsConnected) {
 		// 	info->connection_timeout = 0;
 		// }
-
-		if (info->blacklisted) {
-			return; // don't bother with blacklisted trackers
-		}
 
 		if (pose.bPoseIsValid || pose.eTrackingResult == ETrackingResult::TrackingResult_Fallback_RotationOnly) {
 			if (pose.eTrackingResult == ETrackingResult::TrackingResult_Fallback_RotationOnly) {
@@ -391,10 +381,6 @@ private:
 
 		info->connection_timeout = 0;
 
-		if (info->blacklisted) {
-			return; // don't send information on blacklisted trackers
-		}
-
 		bool should_send = false;
 
 		switch (info->state) {
@@ -477,7 +463,7 @@ public:
 			auto driver = this->GetStringProp(index, ETrackedDeviceProperty::Prop_TrackingSystemName_String);
 			auto info = tracker_info + index;
 
-			info->blacklisted = (driver == "SlimeVR" || driver == "slimevr" || driver == "standable");
+			if (driver == "SlimeVR" || driver == "slimevr" || driver == "standable") continue;
 
 			// only write values once, to avoid overwriting good values later.
 			if (info->name == "") {
