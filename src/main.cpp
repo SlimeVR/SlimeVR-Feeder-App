@@ -210,39 +210,6 @@ private:
 		return GetOpenVRString(get_prop);
 	}
 
-	std::optional<std::string> GetLocalizedName(VRInputValueHandle_t handle, EVRInputStringBits flags) {
-		std::string name = std::string(100, '\0');
-		EVRInputError input_error = VRInput()->GetOriginLocalizedName(handle, name.data(), 100, flags | EVRInputStringBits::VRInputString_ControllerType);
-
-		if (input_error != VRInputError_None && input_error != VRInputError_BufferTooSmall) {
-			if (input_error != VRInputError_None) {
-				fmt::print("Error getting data: IVRInput::GetOriginLocalizedName(): {}\n", (int)input_error);
-			}
-
-			return std::nullopt;
-		}
-
-		name.resize(strlen(name.data()));
-
-		return name;
-	}
-
-	std::optional<TrackedDeviceIndex_t> GetIndex(VRInputValueHandle_t value_handle) {
-		InputOriginInfo_t info;
-		EVRInputError error = VRInput()->GetOriginTrackedDeviceInfo(value_handle, &info, sizeof(info));
-		if (error != EVRInputError::VRInputError_None) {
-			fmt::print("Error: IVRInput::GetOriginTrackedDeviceInfo: {}\n", (int)error);
-			return std::nullopt;
-		}
-
-		if (info.trackedDeviceIndex >= k_unMaxTrackedDeviceCount) {
-			fmt::print("GetIndex: Got invalid index {}!\n", info.trackedDeviceIndex);
-			return std::nullopt;
-		}
-
-		return std::make_optional(info.trackedDeviceIndex);
-	}
-
 	void SetStatus(TrackedDeviceIndex_t index, messages::TrackerStatus_Status status_val, bool send_anyway) {
 		if (index >= k_unMaxTrackedDeviceCount) {
 			fmt::print("SetStatus: Got invalid index {}!\n", index);
