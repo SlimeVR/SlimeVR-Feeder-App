@@ -522,7 +522,7 @@ public:
 		}
 	}
 
-	std::optional<InputDigitalActionData_t> HandleDigitalActionBool(VRActionHandle_t action_handle, const std::string_view &server_name) {
+	std::optional<InputDigitalActionData_t> HandleDigitalActionBool(VRActionHandle_t action_handle, const char *server_name) {
 		InputDigitalActionData_t action_data;
 		EVRInputError input_error = VRInputError_None;
 

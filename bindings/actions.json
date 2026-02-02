@@ -63,8 +63,8 @@
       "language_tag": "en_us",
       "/actions/main/in/request_calibration": "Full Reset",
       "/actions/main/in/fast_reset": "Yaw Reset",
-      "/actions/main/in/mounting_reset": "Mounting Reset",
-      "/actions/main/in/feet_mounting_reset": "Feet Mounting Reset",
+      "/actions/main/in/mounting_reset": "Mounting Calibration",
+      "/actions/main/in/feet_mounting_reset": "Feet Mounting Calibration",
       "/actions/main/in/pause_tracking": "Pause Tracking"
     }
   ]
