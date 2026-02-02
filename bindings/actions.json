@@ -42,6 +42,11 @@
       "requirement": "optional"
     },
     {
+      "name": "/actions/main/in/feet_mounting_reset",
+      "type": "boolean",
+      "requirement": "optional"
+    },
+    {
       "name": "/actions/main/in/pause_tracking",
       "type": "boolean",
       "requirement": "optional"
@@ -59,6 +64,7 @@
       "/actions/main/in/request_calibration": "Full Reset",
       "/actions/main/in/fast_reset": "Yaw Reset",
       "/actions/main/in/mounting_reset": "Mounting Reset",
+      "/actions/main/in/feet_mounting_reset": "Feet Mounting Reset",
       "/actions/main/in/pause_tracking": "Pause Tracking"
     }
   ]
