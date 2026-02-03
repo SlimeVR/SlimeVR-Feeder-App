@@ -522,27 +522,23 @@ public:
 		}
 	}
 
-	std::optional<InputDigitalActionData_t> HandleDigitalActionBool(VRActionHandle_t action_handle, const char *server_name) {
+	void HandleDigitalActionBool(VRActionHandle_t action_handle, const char *server_name) {
 		InputDigitalActionData_t action_data;
-		EVRInputError input_error = VRInputError_None;
-
-		input_error = VRInput()->GetDigitalActionData(action_handle, &action_data, sizeof(InputDigitalActionData_t), 0);
-		if (input_error == EVRInputError::VRInputError_None) {
-			constexpr bool falling_edge = false; // rising edge for now, making it easy to switch for now just in case.
-			if (action_data.bChanged && (action_data.bState ^ falling_edge)) {
-				messages::ProtobufMessage message;
-				messages::UserAction *userAction = message.mutable_user_action();
-				userAction->set_name(server_name);
-
-				fmt::print("Sending {} action\n", server_name);
-
-				bridge.sendMessage(message);
-			}
-
-			return action_data;
-		} else {
+		EVRInputError input_error = VRInput()->GetDigitalActionData(action_handle, &action_data, sizeof(InputDigitalActionData_t), 0);
+		if (input_error != EVRInputError::VRInputError_None) {
 			fmt::print("Error: VRInput::GetDigitalActionData(\"{}\"): {}\n", server_name, (int)input_error);
-			return {};
+			return;
+		}
+
+		constexpr bool falling_edge = false; // rising edge for now, making it easy to switch for now just in case.
+		if (action_data.bChanged && (action_data.bState ^ falling_edge)) {
+			messages::ProtobufMessage message;
+			messages::UserAction *userAction = message.mutable_user_action();
+			userAction->set_name(server_name);
+
+			fmt::print("Sending {} action\n", server_name);
+
+			bridge.sendMessage(message);
 		}
 	}
 };
