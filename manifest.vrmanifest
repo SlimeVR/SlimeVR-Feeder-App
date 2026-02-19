@@ -4,6 +4,7 @@
 		"app_key": "slimevr.steamvr.feeder",
 		"launch_type": "binary",
 		"binary_path_windows": "SlimeVR-Feeder-App.exe",
+		"binary_path_linux": "SlimeVR-Feeder-App",
 		"is_dashboard_overlay": true,
 		"action_manifest_path": "bindings/actions.json",
 
